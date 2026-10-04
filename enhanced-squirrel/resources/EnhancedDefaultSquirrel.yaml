@@ -1,0 +1,376 @@
+# Bundled default appearance; contains no personal dictionary or learning data.
+app_options:
+  co.zeit.hyper:
+    ascii_mode: true
+  com.alfredapp.Alfred:
+    ascii_mode: true
+  com.apple.Spotlight:
+    ascii_mode: true
+  com.apple.Terminal:
+    ascii_mode: true
+    no_inline: true
+  com.apple.dt.Xcode:
+    ascii_mode: true
+  com.barebones.textwrangler:
+    ascii_mode: true
+  com.blacktree.Quicksilver:
+    ascii_mode: true
+  com.github.atom:
+    ascii_mode: true
+  com.google.Chrome:
+    inline: true
+  com.googlecode.iterm2:
+    ascii_mode: true
+    no_inline: true
+  com.macromates.TextMate.preview:
+    ascii_mode: true
+  com.microsoft.VSCode:
+    ascii_mode: true
+  com.microsoft.edgemac:
+    inline: true
+  com.runningwithcrayons.Alfred-2:
+    ascii_mode: true
+  com.sublimetext.2:
+    ascii_mode: true
+  org.gnu.Aquamacs:
+    ascii_mode: true
+  org.gnu.Emacs:
+    ascii_mode: true
+    no_inline: true
+  org.vim.MacVim:
+    ascii_mode: true
+    no_inline: true
+    vim_mode: true
+  ru.keepcoder.Telegram:
+    inline: true
+chord_duration: 0.1
+config_version: 1.0.enhanced.20261002
+keyboard_layout: last
+preset_color_schemes:
+  apathy:
+    author: LIANG Hai
+    back_color: 16777215
+    border_height: 0
+    border_width: 0
+    candidate_format: '%c %@ '
+    candidate_list_layout: linear
+    comment_text_color: 10066329
+    corner_radius: 5
+    font_face: PingFangSC-Regular,HanaMinB
+    font_point: 16
+    hilited_candidate_back_color: 16773348
+    hilited_candidate_text_color: 15625728
+    inline_preedit: true
+    label_font_face: STHeitiSC-Light
+    label_font_point: 12
+    name: 冷漠／Apathy
+    text_color: 4342338
+  aqua:
+    author: 佛振 <chen.sst@gmail.com>
+    back_color: 4008505070
+    candidate_text_color: 0
+    comment_text_color: 5921370
+    hilited_candidate_back_color: 4009376266
+    hilited_candidate_text_color: 16777215
+    hilited_comment_text_color: 16559261
+    hilited_text_color: 0
+    name: 碧水／Aqua
+    text_color: 6316128
+  azure:
+    author: 佛振 <chen.sst@gmail.com>
+    back_color: 4002106881
+    candidate_text_color: 16771788
+    comment_text_color: 13014628
+    hilited_candidate_back_color: 0
+    hilited_candidate_text_color: 8388351
+    hilited_text_color: 16771788
+    name: 青天／Azure
+    text_color: 13608567
+  clean_white:
+    author: Chongyu Zhu <lembacon@gmail.com>, based on 搜狗「简约白」
+    back_color: 15658734
+    border_height: 6
+    border_width: 6
+    candidate_format: '%c %@'
+    candidate_list_layout: linear
+    candidate_text_color: 0
+    comment_text_color: 8421504
+    corner_radius: 6
+    font_point: 16
+    hilited_candidate_back_color: 15658734
+    hilited_candidate_label_color: 2697562389
+    hilited_candidate_text_color: 13207829
+    hilited_text_color: 0
+    label_color: 8947848
+    label_font_point: 12
+    name: 简约白／Clean White
+    text_color: 8421504
+  codex_space_select:
+    author: Codex
+    back_color: 16777215
+    border_color: 14211288
+    candidate_text_color: 16746496
+    hilited_candidate_back_color: 16777215
+    hilited_candidate_label_color: 255
+    hilited_candidate_text_color: 255
+    hilited_text_color: 255
+    label_color: 16764006
+    name: 空格选词
+    text_color: 255
+  dark_temple:
+    author: 佛振 <chen.sst@gmail.com>, based on ir_black
+    back_color: 2236962
+    candidate_text_color: 14214118
+    comment_text_color: 6319359
+    hilited_back_color: 2236962
+    hilited_candidate_back_color: 268435456
+    hilited_candidate_text_color: 9631450
+    hilited_text_color: 16764826
+    name: 暗堂／Dark Temple
+    text_color: 9631450
+  dust:
+    author: Superoutman <asticosmo@gmail.com>
+    back_color: 4009754623
+    border_color: 14726803
+    border_height: 3
+    border_width: 8
+    candidate_format: '%c %@ '
+    candidate_list_layout: linear
+    candidate_text_color: 5592405
+    comment_text_color: 10066329
+    corner_radius: 2
+    font_face: HYQiHei-55S Book,HanaMinA Regular
+    font_point: 14
+    hilited_candidate_back_color: 16773348
+    hilited_candidate_label_color: 5592405
+    hilited_candidate_text_color: 0
+    hilited_comment_text_color: 10395294
+    hilited_text_color: 10395294
+    inline_preedit: true
+    label_color: 13355979
+    label_font_face: SimHei
+    label_font_point: 10
+    name: 浮尘／Dust
+    text_color: 4342338
+  google:
+    author: skoj <skoj@qq.com>
+    back_color: 16777215
+    border_color: 14869218
+    candidate_text_color: 0
+    comment_text_color: 7171437
+    hilited_back_color: 16777215
+    hilited_candidate_back_color: 13530425
+    hilited_candidate_text_color: 16777215
+    hilited_comment_text_color: 15451824
+    hilited_text_color: 0
+    name: 谷歌／Google
+    text_color: 6710886
+  ink:
+    author: 佛振 <chen.sst@gmail.com>
+    back_color: 4009754623
+    candidate_text_color: 0
+    comment_text_color: 5921370
+    hilited_candidate_back_color: 3422552064
+    hilited_candidate_text_color: 16777215
+    hilited_comment_text_color: 8421504
+    hilited_text_color: 0
+    name: 墨池／Ink
+    text_color: 5921370
+  lost_temple:
+    author: 佛振 <chen.sst@gmail.com>, based on ir_black
+    back_color: 3996135472
+    comment_text_color: 3145918154
+    hilited_candidate_back_color: 8578762
+    hilited_candidate_text_color: 0
+    hilited_comment_text_color: 3139452212
+    hilited_text_color: 8578762
+    name: 孤寺／Lost Temple
+    text_color: 15266806
+  luna:
+    author: 佛振 <chen.sst@gmail.com>
+    back_color: 3707764736
+    candidate_text_color: 15527662
+    comment_text_color: 10855845
+    hilited_candidate_back_color: 1073741824
+    hilited_candidate_text_color: 8388607
+    hilited_comment_text_color: 4496541
+    hilited_text_color: 8388607
+    name: 明月／Luna
+    text_color: 10855845
+  mojave_dark:
+    author: xiehuc <xiehuc@gmail.com>
+    back_color: 2433824
+    border_color: 131586
+    border_height: 6
+    border_width: 6
+    candidate_format: '%c %@'
+    candidate_list_layout: linear
+    candidate_text_color: 14605789
+    comment_text_color: 14605789
+    corner_radius: 5
+    font_face: PingFangSC
+    font_point: 16
+    hilited_back_color: 2433824
+    hilited_candidate_back_color: 13327616
+    hilited_candidate_label_color: 16777215
+    hilited_candidate_text_color: 16777215
+    hilited_corner_radius: 3
+    hilited_text_color: 14605789
+    inline_preedit: true
+    label_color: 8947589
+    label_font_point: 14
+    name: 沙漠夜／Mojave Dark
+    text_color: 14605789
+  native:
+    name: 系統配色
+  psionics:
+    author: 雨過之後、佛振
+    back_color: 4473924
+    candidate_text_color: 15658734
+    comment_text_color: 8421504
+    hilited_back_color: 4473924
+    hilited_candidate_back_color: 13941760
+    hilited_candidate_label_color: 16448250
+    hilited_candidate_text_color: 16448250
+    hilited_comment_text_color: 4473924
+    hilited_text_color: 15658734
+    name: 幽能／Psionics
+    text_color: 12763842
+  purity_of_essence:
+    author: 佛振
+    back_color: 16448250
+    candidate_text_color: 0
+    comment_text_color: 8421504
+    hilited_back_color: 16448250
+    hilited_candidate_back_color: 4473924
+    hilited_candidate_text_color: 15658734
+    hilited_text_color: 0
+    name: 純粹的本質／Purity of Essence
+    text_color: 2895052
+  purity_of_form:
+    author: 雨過之後、佛振
+    back_color: 4473924
+    candidate_text_color: 15658734
+    comment_text_color: 8421504
+    hilited_back_color: 4473924
+    hilited_candidate_back_color: 16448250
+    hilited_candidate_text_color: 0
+    hilited_text_color: 15658734
+    name: 純粹的形式／Purity of Form
+    text_color: 12763682
+  retro_green:
+    author: 佛振 <chen.sst@gmail.com>
+    back_color: 0
+    border_color: 65280
+    border_height: 2
+    border_width: 2
+    corner_radius: 16
+    hilited_candidate_back_color: 65280
+    hilited_candidate_label_color: 0
+    hilited_candidate_text_color: 0
+    label_color: 65280
+    name: 綠色熒光屏
+    text_color: 65280
+  retro_orange:
+    author: 佛振 <chen.sst@gmail.com>
+    back_color: 0
+    border_color: 37887
+    border_height: 2
+    border_width: 2
+    corner_radius: 16
+    hilited_candidate_back_color: 37887
+    hilited_candidate_label_color: 0
+    hilited_candidate_text_color: 0
+    label_color: 37887
+    name: 琥珀色熒光屏
+    text_color: 37887
+  solarized_dark:
+    author: 雪齋 <lyc20041@gmail.com>
+    back_color: 4030016010
+    border_color: 2760448
+    candidate_text_color: 7571967
+    comment_text_color: 12815103
+    hilited_back_color: 13228767
+    hilited_candidate_back_color: 4207894
+    hilited_candidate_label_color: 13404487
+    hilited_candidate_text_color: 10002258
+    hilited_comment_text_color: 2660745
+    hilited_text_color: 12480621
+    label_color: 4689396
+    name: 曬經・月／Solarized Dark
+    preedit_back_color: 14149869
+    text_color: 7695965
+  solarized_light:
+    author: 雪齋 <lyc20041@gmail.com>
+    back_color: 4041602811
+    border_color: 15597567
+    candidate_text_color: 5856768
+    color_space: display_p3
+    comment_text_color: 22855
+    hilited_back_color: 4997154
+    hilited_candidate_back_color: 14149869
+    hilited_candidate_label_color: 2451142
+    hilited_candidate_text_color: 3752651
+    hilited_comment_text_color: 8471746
+    hilited_text_color: 2919342
+    label_color: 10707975
+    name: 曬經・日／Solarized Light
+    preedit_back_color: 4207894
+    text_color: 10592405
+  solarized_rock:
+    author: Aben <tntaben@gmail.com>, based on Ethan Schoonover's Solarized 
+      color scheme
+    back_color: 3549952
+    border_color: 3549952
+    candidate_text_color: 9868419
+    comment_text_color: 3231228202
+    hilited_candidate_back_color: 8533715
+    hilited_candidate_text_color: 16777215
+    hilited_comment_text_color: 3549952
+    hilited_text_color: 10002730
+    name: 曬經石／Solarized Rock
+    text_color: 8533715
+  starcraft:
+    author: Contralisk <contralisk@gmail.com>, original artwork by Blizzard 
+      Entertainment
+    back_color: 3992977408
+    border_color: 1052832
+    border_height: 2
+    border_width: 2
+    candidate_text_color: 3193685
+    comment_text_color: 1052880
+    corner_radius: 8
+    hilited_back_color: 0
+    hilited_candidate_back_color: 0
+    hilited_candidate_label_color: 4247423
+    hilited_candidate_text_color: 7405487
+    hilited_comment_text_color: 1052912
+    hilited_corner_radius: 8
+    hilited_text_color: 16698262
+    name: 星際我爭霸／StarCraft
+    text_color: 13413000
+show_notifications_when: appropriate
+status_icon:
+  show: true
+style:
+  border_height: '-2'
+  border_width: '-2'
+  candidate_format: '[label] [candidate] [comment]'
+  candidate_list_layout: stacked
+  color_scheme: codex_space_select
+  color_scheme_dark: codex_space_select
+  corner_radius: 7
+  font_face: Avenir
+  font_point: 20
+  hilited_corner_radius: 0
+  inline_candidate: false
+  inline_preedit: false
+  label_font_point: 16
+  line_spacing: 5
+  memorize_size: true
+  mutual_exclusive: false
+  shadow_size: 0
+  show_paging: false
+  spacing: 8
+  text_orientation: horizontal
+  translucency: false

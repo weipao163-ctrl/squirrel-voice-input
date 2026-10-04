@@ -1,0 +1,33 @@
+---
+name: letter_fixture
+version: "1"
+sort: by_weight
+use_preset_vocabulary: false
+...
+你好	ni hao	100000
+世界	shi jie	90000
+你	ni	9900
+尼	ni	9800
+泥	ni	9700
+拟	ni	9600
+逆	ni	9500
+匿	ni	9400
+腻	ni	9300
+妮	ni	9200
+倪	ni	9100
+霓	ni	9000
+昵	ni	8900
+溺	ni	8800
+睨	ni	8700
+旎	ni	8600
+鲵	ni	8500
+坭	ni	8400
+伲	ni	8300
+怩	ni	8200
+铌	ni	8100
+猊	ni	8000
+好	hao	9900
+号	hao	9800
+世	shi	9900
+是	shi	9800
+界	jie	9900

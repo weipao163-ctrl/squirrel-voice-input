@@ -1,0 +1,85 @@
+[
+  {
+    "name": "full_flow_legacy",
+    "source": "patch:\n  engine/processors: [ascii_composer, lua_processor@*space_select_gate, recognizer, key_binder, speller, punctuator, selector, navigator, express_editor] # original list\n  menu/page_size: 5 # old page\n  translator/dictionary: letter_fixture\n",
+    "expected": "patch:\n  # BEGIN SquirrelEnhanced owned patch v2\n  \"engine/processors\":\n    - \"lua_processor@*letter_selection\"\n    - \"ascii_composer\"\n    - \"recognizer\"\n    - \"key_binder\"\n    - \"speller\"\n    - \"punctuator\"\n    - \"selector\"\n    - \"navigator\"\n    - \"express_editor\"\n  letter_selection/enabled: true\n  letter_selection/keys: \"abcdefghi\"\n  letter_selection/hide_candidates: true\n  menu/page_size: 9\n  # END SquirrelEnhanced owned patch v2\n  translator/dictionary: letter_fixture\n",
+    "processorsBefore": [
+      "ascii_composer",
+      "lua_processor@*space_select_gate",
+      "recognizer",
+      "key_binder",
+      "speller",
+      "punctuator",
+      "selector",
+      "navigator",
+      "express_editor"
+    ],
+    "processorsAfter": [
+      "lua_processor@*letter_selection",
+      "ascii_composer",
+      "recognizer",
+      "key_binder",
+      "speller",
+      "punctuator",
+      "selector",
+      "navigator",
+      "express_editor"
+    ],
+    "replaceLegacy": true
+  },
+  {
+    "name": "existing_before_insertion",
+    "source": "patch:\n  \"engine/processors/@before 0\": \"lua_processor@*space_select_gate\"\n  menu/page_size: 6\n  translator/enable_user_dict: true\n",
+    "expected": "patch:\n  # BEGIN SquirrelEnhanced owned patch v2\n  \"engine/processors\":\n    - \"lua_processor@*letter_selection\"\n    - \"ascii_composer\"\n    - \"recognizer\"\n    - \"key_binder\"\n    - \"speller\"\n    - \"punctuator\"\n    - \"selector\"\n    - \"navigator\"\n    - \"express_editor\"\n  letter_selection/enabled: true\n  letter_selection/keys: \"abcdefghi\"\n  letter_selection/hide_candidates: true\n  menu/page_size: 9\n  # END SquirrelEnhanced owned patch v2\n  translator/enable_user_dict: true\n",
+    "processorsBefore": [
+      "lua_processor@*space_select_gate",
+      "ascii_composer",
+      "recognizer",
+      "key_binder",
+      "speller",
+      "punctuator",
+      "selector",
+      "navigator",
+      "express_editor"
+    ],
+    "processorsAfter": [
+      "lua_processor@*letter_selection",
+      "ascii_composer",
+      "recognizer",
+      "key_binder",
+      "speller",
+      "punctuator",
+      "selector",
+      "navigator",
+      "express_editor"
+    ],
+    "replaceLegacy": true
+  },
+  {
+    "name": "minimal_insertion",
+    "source": "patch:\n  translator/enable_user_dict: true\n",
+    "expected": "patch:\n  # BEGIN SquirrelEnhanced owned patch v2\n  \"engine/processors/@before 0\": \"lua_processor@*letter_selection\"\n  letter_selection/enabled: true\n  letter_selection/keys: \"abcdefghi\"\n  letter_selection/hide_candidates: true\n  menu/page_size: 9\n  # END SquirrelEnhanced owned patch v2\n  translator/enable_user_dict: true\n",
+    "processorsBefore": [
+      "ascii_composer",
+      "recognizer",
+      "key_binder",
+      "speller",
+      "punctuator",
+      "selector",
+      "navigator",
+      "express_editor"
+    ],
+    "processorsAfter": [
+      "lua_processor@*letter_selection",
+      "ascii_composer",
+      "recognizer",
+      "key_binder",
+      "speller",
+      "punctuator",
+      "selector",
+      "navigator",
+      "express_editor"
+    ],
+    "replaceLegacy": false
+  }
+]

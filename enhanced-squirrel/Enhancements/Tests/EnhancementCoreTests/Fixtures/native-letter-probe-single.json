@@ -1,0 +1,1875 @@
+{
+  "format": 1,
+  "kind": "real_librime_C_API_fixture",
+  "status": "PASS",
+  "version": "1.17.0",
+  "keys": "a",
+  "hide": true,
+  "page_size": 1,
+  "macOS_UI_tested": false,
+  "network_calls": 0,
+  "user_dictionary_used": false,
+  "isolation_verified": true,
+  "passed": 13,
+  "failed": 0,
+  "skipped": 1,
+  "fatal": "",
+  "tests": [
+    {
+      "name": "pinyin_and_first_space",
+      "status": "PASS",
+      "error": "",
+      "steps": [
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "n",
+            "phase": "off",
+            "commit": "",
+            "preedit": "n",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 104,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nih",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "nih",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 97,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "niha",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "niha",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 111,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihao",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni hao",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 32,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihao",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni hao",
+            "keys": "a",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你好"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "alphabet_is_pinyin_before_selection",
+      "status": "PASS",
+      "error": "",
+      "steps": [
+        {
+          "keycode": 97,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "a",
+            "phase": "off",
+            "commit": "",
+            "preedit": "a",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 98,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ab",
+            "phase": "off",
+            "commit": "",
+            "preedit": "ab",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 99,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abc",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abc",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 100,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcd",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcd",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 101,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcde",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcde",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 102,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdef",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdef",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 103,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefg",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefg",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 104,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefgh",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefgh",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghi",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghi",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 106,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghij",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghij",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 107,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijk",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijk",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 108,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijkl",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijkl",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 109,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklm",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklm",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklmn",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklmn",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 111,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklmno",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklmno",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 112,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklmnop",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklmnop",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 113,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklmnopq",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklmnopq",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 114,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklmnopqr",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklmnopqr",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 115,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklmnopqrs",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklmnopqrs",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 116,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklmnopqrst",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklmnopqrst",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 117,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklmnopqrstu",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklmnopqrstu",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 118,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklmnopqrstuv",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklmnopqrstuv",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 119,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklmnopqrstuvw",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklmnopqrstuvw",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 120,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklmnopqrstuvwx",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklmnopqrstuvwx",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 121,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklmnopqrstuvwxy",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklmnopqrstuvwxy",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 122,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "abcdefghijklmnopqrstuvwxyz",
+            "phase": "off",
+            "commit": "",
+            "preedit": "abcdefghijklmnopqrstuvwxyz",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "selection_letters_current_page",
+      "status": "PASS",
+      "error": "",
+      "steps": [
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "n",
+            "phase": "off",
+            "commit": "",
+            "preedit": "n",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 32,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "a",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你"
+            ]
+          }
+        },
+        {
+          "keycode": 97,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "",
+            "phase": "off",
+            "commit": "你",
+            "preedit": "",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "second_space_confirms_highlight",
+      "status": "PASS",
+      "error": "",
+      "steps": [
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "n",
+            "phase": "off",
+            "commit": "",
+            "preedit": "n",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 32,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "a",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你"
+            ]
+          }
+        },
+        {
+          "keycode": 32,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "",
+            "phase": "off",
+            "commit": "你",
+            "preedit": "",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "second_page_letter",
+      "status": "PASS",
+      "error": "",
+      "steps": [
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "n",
+            "phase": "off",
+            "commit": "",
+            "preedit": "n",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 32,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "a",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你"
+            ]
+          }
+        },
+        {
+          "keycode": 65366,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "a",
+            "page": 1,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "尼"
+            ]
+          }
+        },
+        {
+          "keycode": 97,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "",
+            "phase": "off",
+            "commit": "尼",
+            "preedit": "",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "last_page_missing_item",
+      "status": "N/A",
+      "error": "page size 1 cannot have a nonempty partial page",
+      "steps": []
+    },
+    {
+      "name": "escape_retains_input",
+      "status": "PASS",
+      "error": "",
+      "steps": [
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "n",
+            "phase": "off",
+            "commit": "",
+            "preedit": "n",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 104,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nih",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "nih",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 97,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "niha",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "niha",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 111,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihao",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni hao",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 32,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihao",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni hao",
+            "keys": "a",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你好"
+            ]
+          }
+        },
+        {
+          "keycode": 65307,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihao",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni hao",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "backspace_exactly_once",
+      "status": "PASS",
+      "error": "",
+      "steps": [
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "n",
+            "phase": "off",
+            "commit": "",
+            "preedit": "n",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 104,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nih",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "nih",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 97,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "niha",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "niha",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 111,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihao",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni hao",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 32,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihao",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni hao",
+            "keys": "a",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你好"
+            ]
+          }
+        },
+        {
+          "keycode": 65288,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "niha",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "niha",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "numeric_current_page",
+      "status": "PASS",
+      "error": "",
+      "steps": [
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "n",
+            "phase": "off",
+            "commit": "",
+            "preedit": "n",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 32,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "a",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你"
+            ]
+          }
+        },
+        {
+          "keycode": 49,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "",
+            "phase": "off",
+            "commit": "你",
+            "preedit": "",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "mouse_current_page_API",
+      "status": "PASS",
+      "error": "",
+      "steps": [
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "n",
+            "phase": "off",
+            "commit": "",
+            "preedit": "n",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 32,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "a",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你"
+            ]
+          }
+        },
+        {
+          "keycode": 65366,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "a",
+            "page": 1,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "尼"
+            ]
+          }
+        },
+        {
+          "mouse_API_state": {
+            "input": "",
+            "phase": "off",
+            "commit": "尼",
+            "preedit": "",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "sentence_partial_selection",
+      "status": "PASS",
+      "error": "",
+      "steps": [
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "n",
+            "phase": "off",
+            "commit": "",
+            "preedit": "n",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 104,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nih",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "nih",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 97,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "niha",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "niha",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 111,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihao",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni hao",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 115,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihaos",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni haos",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 104,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihaosh",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni haosh",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihaoshi",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni hao shi",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 106,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihaoshij",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni hao shij",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihaoshiji",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni hao shiji",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 101,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihaoshijie",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni hao shi jie",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 32,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihaoshijie",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni hao shi jie",
+            "keys": "a",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你好世界"
+            ]
+          }
+        },
+        {
+          "keycode": 65366,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihaoshijie",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni haoshijie",
+            "keys": "a",
+            "page": 1,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你好"
+            ]
+          }
+        },
+        {
+          "keycode": 97,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "nihaoshijie",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "你好shi jie",
+            "keys": "a",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "世界"
+            ]
+          }
+        },
+        {
+          "keycode": 97,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "",
+            "phase": "off",
+            "commit": "你好世界",
+            "preedit": "",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "ASCII_and_shortcut_passthrough",
+      "status": "PASS",
+      "error": "",
+      "steps": [
+        {
+          "keycode": 97,
+          "mask": 0,
+          "handled": false,
+          "state": {
+            "input": "",
+            "phase": "off",
+            "commit": "",
+            "preedit": "",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "n",
+            "phase": "off",
+            "commit": "",
+            "preedit": "n",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 32,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "a",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你"
+            ]
+          }
+        },
+        {
+          "keycode": 97,
+          "mask": 4,
+          "handled": false,
+          "state": {
+            "input": "ni",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "a",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "disable_restores_original_labels",
+      "status": "PASS",
+      "error": "",
+      "steps": [
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "n",
+            "phase": "off",
+            "commit": "",
+            "preedit": "n",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "off",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你"
+            ]
+          }
+        },
+        {
+          "keycode": 32,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "",
+            "phase": "off",
+            "commit": "你",
+            "preedit": "",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "independent_session_cleanup",
+      "status": "PASS",
+      "error": "",
+      "steps": [
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "n",
+            "phase": "off",
+            "commit": "",
+            "preedit": "n",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 32,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "selecting",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "a",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": [
+              "你"
+            ]
+          }
+        },
+        {
+          "keycode": 110,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "n",
+            "phase": "off",
+            "commit": "",
+            "preedit": "n",
+            "keys": "",
+            "page": 0,
+            "size": 0,
+            "highlight": 0,
+            "hidden": false,
+            "last": false,
+            "candidates": []
+          }
+        },
+        {
+          "keycode": 105,
+          "mask": 0,
+          "handled": true,
+          "state": {
+            "input": "ni",
+            "phase": "editing",
+            "commit": "",
+            "preedit": "ni",
+            "keys": "",
+            "page": 0,
+            "size": 1,
+            "highlight": 0,
+            "hidden": true,
+            "last": false,
+            "candidates": []
+          }
+        }
+      ]
+    }
+  ]
+}

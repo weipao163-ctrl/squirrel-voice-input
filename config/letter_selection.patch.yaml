@@ -1,0 +1,18 @@
+# Merge these individual keys into the selected schema's .custom.yaml / patch.
+# Do not replace engine/processors, dictionary, translator, filters or default.yaml.
+patch:
+  engine/processors/@before 0: lua_processor@*letter_selection
+  menu/page_size: 9
+  letter_selection/enabled: true
+  letter_selection/hide_candidates: true
+  letter_selection/keys: asdfghjkl
+  letter_selection/entry_key: space
+  letter_selection/confirm_key: space
+  letter_selection/cancel_key: Escape
+  letter_selection/backspace_key: BackSpace
+  letter_selection/tag: abc
+  # Original key_binder paging/navigation is detected; list extra custom routes here.
+  letter_selection/navigation_keys: []
+  letter_selection/passthrough_patterns: ["^v", "^V"]
+  letter_selection/passthrough_inputs: []
+  letter_selection/excluded_candidate_types: [raw, punct, reverse_lookup, unicode, number, calc, date, time, week, lunar, uuid, english]
