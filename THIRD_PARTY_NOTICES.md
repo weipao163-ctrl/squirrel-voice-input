@@ -13,6 +13,6 @@
 | 默认 Quick5 资源 | [rime/rime-quick](https://github.com/rime/rime-quick)，提交 `5dcdb9e353d314239e9c8cddc0f42d52da4837bb`；LGPL-3.0，LICENSE / AUTHORS / GPL-3.0.txt / UPSTREAM.json 保留在资源目录 |
 | Sparkle 构建依赖 | [sparkle-project/Sparkle](https://github.com/sparkle-project/Sparkle) 2.6.2；许可见 `enhanced-squirrel/third-party/Sparkle-LICENSE.txt` |
 
-仓库不发布第三方预编译运行库。构建时下载的插件、OpenCC、公开词库和签名工具还具有自己的许可证，开发者分发构建产物时须保留对应声明并检查其来源。
+Git 代码区不包含第三方预编译运行库。Releases 的安装包包含运行所需的 librime、插件、OpenCC、Sparkle 与公开默认词库，程序的 Resources/Licenses 和 SharedSupport 目录保留对应许可证与作者声明。构建时使用的签名工具不随安装包分发。开发者再次分发构建产物时须保留对应声明并检查其来源。
 
 公共默认外观沿用原配色作者声明；这些上游署名不是本机用户信息。千问、豆包及平台名称用于说明可配置的服务接口，不表示官方授权或背书。
