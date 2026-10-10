@@ -19,6 +19,7 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
   @Published private(set) var focusPermissionStatus="输入法焦点检测权限尚未确认。"
   @Published var showKey = false
   @Published var devices: [InputDevice] = []
+  private var deviceInventoryObserver:InputDeviceInventoryObserver?
   let fonts = NSFontManager.shared.availableFonts.sorted()
   @Published var schemas: [String] = []
   @Published var selectedSchema = ""
@@ -126,6 +127,7 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
       status = "配置/凭据读取失败；语音未就绪，原文件未覆盖。\n\(error.localizedDescription)"
     }
     refreshDevices(); refreshSchemas(); refreshMicrophoneAuthorization()
+    deviceInventoryObserver=InputDeviceInventoryObserver { [weak self] in self?.refreshDevices() }
     NotificationCenter.default.addObserver(self, selector: #selector(deactivated), name: NSApplication.didResignActiveNotification, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(activated), name: NSApplication.didBecomeActiveNotification, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(testWindowResigned), name: NSWindow.didResignKeyNotification, object:nil)
@@ -844,7 +846,7 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
     }
   }
   @objc private func deactivated() { stopSettingsActivity() }
-  @objc private func activated() { refreshMicrophoneAuthorization(); refreshFocusPermission(); testEditorController.restoreFocusIfNeeded() }
+  @objc private func activated() { refreshDevices(); refreshMicrophoneAuthorization(); refreshFocusPermission(); testEditorController.restoreFocusIfNeeded() }
   @objc private func testWindowResigned(_ note:Notification) {
     if let window=note.object as? NSWindow, window === windowController?.window { stopSettingsActivity() }
   }

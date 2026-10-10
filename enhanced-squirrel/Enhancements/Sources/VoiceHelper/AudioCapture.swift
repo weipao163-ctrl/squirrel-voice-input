@@ -32,6 +32,25 @@ struct InputDevice: Identifiable, Equatable {
   }
 }
 
+// Inventory changes do not request permission or open an audio stream.
+final class InputDeviceInventoryObserver {
+  private var address=AudioObjectPropertyAddress(mSelector:kAudioHardwarePropertyDevices,
+    mScope:kAudioObjectPropertyScopeGlobal,mElement:kAudioObjectPropertyElementMain)
+  private let listener:AudioObjectPropertyListenerBlock
+  private var installed=false
+  init(changed:@escaping()->Void) {
+    listener={ _,_ in changed() }
+    installed=AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject),
+      &address,DispatchQueue.main,listener) == noErr
+  }
+  deinit {
+    if installed {
+      AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject),
+        &address,DispatchQueue.main,listener)
+    }
+  }
+}
+
 final class AudioCapture {
   private let engine = AVAudioEngine()
   private let lock = NSLock()

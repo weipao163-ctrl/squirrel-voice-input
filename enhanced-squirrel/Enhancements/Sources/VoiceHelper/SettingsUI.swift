@@ -390,9 +390,11 @@ struct SettingsView: View {
               Text(model.draft.voice.activeCredentialReference == nil ? "所选服务未保存密钥" : "所选服务密钥已保存至 Keychain，不回显")
               Button("删除所选服务密钥…") { deleteConfirm = true }
             }
-            Picker("麦克风",selection:Binding(get:{model.draft.voice.deviceUID ?? ""},set:{model.draft.voice.deviceUID = $0.isEmpty ? nil : $0})) {
-              Text("系统默认设备").tag("")
-              ForEach(model.devices) { Text($0.name).tag($0.id) }
+            HStack {
+              Text("麦克风")
+              MicrophoneDevicePicker(selection:$model.draft.voice.deviceUID,devices:model.devices)
+                .frame(maxWidth:.infinity)
+                .accessibilityIdentifier("voiceMicrophonePicker")
             }
             Text(model.productionMicrophoneStatus).font(.caption).foregroundStyle(.secondary)
               .accessibilityIdentifier("productionMicrophoneStatus")
