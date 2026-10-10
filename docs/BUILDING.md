@@ -17,7 +17,7 @@ bash scripts/prepare-dependencies.sh
 
 准备脚本获取上游 librime 1.17.0、插件、OpenCC 与 Sparkle 2.6.2，默认方案通过公开的 Plum 配方生成。不会读取个人 Rime 目录，不安装或切换输入法。Rime 与 Sparkle 运行档案的 URL 和 SHA-256 固定在 `DEPENDENCIES.lock.json`；本地签名工具也有固定校验值。默认方案配方内容来自其公开仓库，首次联网获取时应审查来源；不宣称全部配方已锁定到相同历史快照。
 
-仓库只含源码与资源；下载的运行库是本地构建依赖，不是本仓库发布的二进制。已有官方 Squirrel 也可通过 `SQUIRREL_RUNTIME_APP` 显式提供只读运行依赖，默认构建不要求安装官方输入法。
+Git 代码区只含源码与资源；下载的运行库是本地构建依赖。可安装的编译产物单独放在 Releases，不进入源码历史。已有官方 Squirrel 也可通过 `SQUIRREL_RUNTIME_APP` 显式提供只读运行依赖，默认构建不要求安装官方输入法。
 
 ## 本地构建
 
@@ -31,7 +31,9 @@ ENHANCEMENT_LOCAL_SIGNING=1 bash enhanced-squirrel/scripts/build-clt.sh
 
 如果不设置 `ENHANCEMENT_LOCAL_SIGNING=1`，构建只生成 ad-hoc 开发候选，生产语音 IPC 不启用。完整 Xcode 与真实 Developer ID 的另一构建路径见 `enhanced-squirrel/scripts/build-enhanced.sh`；开发者须提供自己的身份，仓库不附签名凭据。
 
-本地签名不能替代 Apple Developer ID 签名、公证或正式分发。原生主程序针对 macOS；源码里的 Windows 夹具不是 Windows 输入法 GUI。
+签名前使用系统 `strip -S` 去除主程序和 Helper 的调试对象路径，保留运行时符号。
+
+本地签名不能替代 Apple Developer ID 签名或公证；首次安装需按 [安装说明](INSTALLATION.md) 在系统隐私与安全中允许。原生主程序针对 macOS；源码里的 Windows 夹具不是 Windows 输入法 GUI。
 
 ## 测试
 
@@ -39,6 +41,7 @@ ENHANCEMENT_LOCAL_SIGNING=1 bash enhanced-squirrel/scripts/build-clt.sh
 # 公开文件边界与常见凭据检查
 python3 tools/check_public_source.py
 python3 tests/test_public_source.py
+python3 tests/test_app_update_preparation.py
 # Lua 和安装事务：不操作正在使用的输入法
 .venv/bin/python tests/test_letter_selection.py
 .venv/bin/python tests/test_app_install_transaction.py --bash /bin/bash
@@ -62,4 +65,4 @@ bash enhanced-squirrel/scripts/install-dev.sh --apply
 
 安装目录为当前用户的 `~/Library/Input Methods/SquirrelEnhancedDev.app`，设置与词库位于 `~/Library/Application Support/SquirrelEnhancedDev`。增强版使用独立标识，更新保留设置，并记录回滚备份。首次安装后可能需要注销并重新登录，再从系统设置添加“鼠须管增强开发版”。
 
-不要使用上游 Makefile 的系统安装目标替代增强版安装脚本。源码发布不包含现成安装包；`tools/build_macos_installer.py` 只会在本地构建和来源绑定的回归报告齐全后生成候选包，不能绕过签名与验证要求。
+不要使用上游 Makefile 的系统安装目标替代增强版安装脚本。预编译安装包从 [Releases](https://github.com/weipao163-ctrl/squirrel-voice-input/releases) 下载；`tools/build_macos_installer.py` 只会在本地构建和来源绑定的回归报告齐全后生成候选包，不能绕过签名与验证要求。
