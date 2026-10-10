@@ -8,7 +8,7 @@ def main():
     project=ROOT/'enhanced-squirrel'
     work=Path(tempfile.mkdtemp(prefix='notification-',dir=project/'build'))
     output=work/'NativeRimeNotificationProbe'
-    sources=[project/'Sources/BridgingFunctions.swift',ROOT/'tools/NativeRimeNotificationProbe.swift']
+    sources=[project/'Sources/VoiceTargetSelection.swift',project/'Sources/BridgingFunctions.swift',ROOT/'tools/NativeRimeNotificationProbe.swift']
     library=Path('/Library/Input Methods/Squirrel.app/Contents/Frameworks/librime.1.dylib')
     command=['xcrun','swiftc','-swift-version','5','-I',str(project/'librime/src'),'-I',str(project/'librime/include'),
       '-import-objc-header',str(project/'Sources/Squirrel-Bridging-Header.h'),*map(str,sources),str(library),

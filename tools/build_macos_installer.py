@@ -44,7 +44,7 @@ def main():
     stage=Path(tempfile.mkdtemp(prefix='installer-',dir=project/'build'))
     scripts=stage/'scripts';scripts.mkdir()
     checks.append(command(['/usr/bin/ditto',app,scripts/app.name]))
-    for name,target in [('pkg-postinstall.sh','postinstall'),('pkg-user-install.sh','pkg-user-install.sh'),('app-install-transaction.sh','app-install-transaction.sh')]:
+    for name,target in [('pkg-postinstall.sh','postinstall'),('pkg-user-install.sh','pkg-user-install.sh'),('app-install-transaction.sh','app-install-transaction.sh'),('app-update-preparation.sh','app-update-preparation.sh')]:
         destination=scripts/target;destination.write_bytes((project/'scripts'/name).read_bytes());destination.chmod(0o755)
         checks.append(command(['/bin/bash','-n',destination]))
     # Read-only/early-rejection checks: no real installation or registration.
@@ -53,7 +53,7 @@ def main():
     home_rejection=command(['/bin/bash',scripts/'pkg-user-install.sh',scripts/app.name,'/not-the-user-home'],check=False)
     assert home_rejection['exit_code']==2
     identifier='org.rime.SquirrelEnhanced.Development.Installer'
-    version='0.1.20261003.6'
+    version='0.1.20261010.2'
     component=stage/'SquirrelVoiceInput.component.pkg'
     # Script-only package avoids Installer overwriting a live input method. The
     # signed app is inside Scripts and installed atomically by the shared tested
@@ -70,7 +70,7 @@ def main():
     ET.SubElement(root,'conclusion',{'file':'Conclusion.html','mime-type':'text/html'})
     resources=stage/'resources';resources.mkdir()
     template='<!doctype html><html lang="zh-CN"><meta charset="utf-8"><style>body{font:14px -apple-system,sans-serif;color:#333;line-height:1.65;margin:20px}h1{font-size:21px}li{margin:8px 0}.note{color:#666;font-size:12px}</style><body>__CONTENT__</body></html>'
-    (resources/'Welcome.html').write_text(template.replace('__CONTENT__','''<h1>鼠须管语音增强输入法</h1><p>适用于 Apple Silicon · macOS 13 及以上。</p><p>安装到当前登录用户的 <b>Library/Input Methods/SquirrelEnhancedDev.app</b>。增强版使用独立设置与词库目录，已有增强版会先备份，保留现有鼠须管与正式词库。</p><p>安装会向 macOS 注册独立的“鼠须管增强开发版”并尝试启用它，保留当前选中的输入法。安装完成后请保存工作，注销当前用户，再重新登录；随后在输入法菜单或系统设置中选择增强版。语音设置中可以配置 API Key、长按热键、申请麦克风权限，并在测试框中真实试用。</p><p class="note">这是本机证书签名安装版本，未经过 Apple Developer ID 签名与公证。新电脑首次打开可能被系统拦截；确认来源后可在“系统设置 → 隐私与安全性”中使用“仍要打开”。不需要关闭系统安全保护。安装包不含任何 API Key 和个人词库，语音服务与权限需在新电脑重新设置。</p>'''),encoding='utf-8')
+    (resources/'Welcome.html').write_text(template.replace('__CONTENT__','''<h1>鼠须管语音增强输入法</h1><p>适用于 Apple Silicon · macOS 13 及以上。</p><p>安装到当前登录用户的 <b>Library/Input Methods/SquirrelEnhancedDev.app</b>。增强版使用独立设置与词库目录，已有增强版会先备份，保留现有鼠须管与正式词库。</p><p>更新时会先正常退出增强版；如有未保存设置，请处理保存或取消提示。正在使用增强版时会暂时切换到系统键盘输入源，让已有输入组合正常结束，再备份替换程序。不会强制结束进程。安装会注册独立的“鼠须管增强开发版”并尝试启用它。安装完成后请保存工作，注销当前用户，再重新登录；随后在输入法菜单或系统设置中选择增强版。语音设置中可以配置 API Key、长按热键、申请麦克风权限，并在测试框中真实试用。</p><p class="note">这是本机证书签名安装版本，未经过 Apple Developer ID 签名与公证。新电脑首次打开可能被系统拦截；确认来源后可在“系统设置 → 隐私与安全性”中使用“仍要打开”。不需要关闭系统安全保护。安装包不含任何 API Key 和个人词库，语音服务与权限需在新电脑重新设置。</p>'''),encoding='utf-8')
     (resources/'Conclusion.html').write_text(template.replace('__CONTENT__','''<h1>安装后的操作</h1><ol><li>保存正在编辑的内容，点击苹果菜单 → 注销当前用户，再重新登录 macOS。新的输入法需要在重新登录后刷新系统列表。</li><li>在菜单栏输入法菜单中选择“鼠须管增强开发版”。如尚未添加，请打开系统设置 → 键盘 → 文本输入 → 编辑，点击＋，在“简体中文”中添加增强版。</li><li>选择该输入法，从输入法菜单打开增强设置，进入“语音输入设置”。</li><li>填写自己的服务信息与 API Key，设置长按热键，点击“申请麦克风权限”和“授权输入法焦点检测”，按系统提示允许；随后“保存并应用”。新电脑不会继承另一台电脑的 Key、麦克风选择或授权。</li><li>在语音输入测试框中按住热键说话、松手结束。识别完成后自动插入；正常输入也无需人工确认。</li></ol><p>更新前的增强版位于 Library/Application Support/SquirrelEnhancedDev/install-backups；普通设置与正式词库均保留。</p>'''),encoding='utf-8')
     tree.write(distribution,encoding='utf-8',xml_declaration=True)
     output=ROOT/f'dist/SquirrelVoiceInput-{version}-arm64.pkg';output.parent.mkdir(exist_ok=True)
@@ -91,7 +91,7 @@ def main():
     hashes={str(p.relative_to(app)):sha(p) for p in app.rglob('*') if p.is_file()}
     extracted={str(p.relative_to(fresh)):sha(p) for p in fresh.rglob('*') if p.is_file()}
     assert hashes==extracted
-    for name in ['postinstall','pkg-user-install.sh','app-install-transaction.sh']:
+    for name in ['postinstall','pkg-user-install.sh','app-install-transaction.sh','app-update-preparation.sh']:
         assert sha(scripts/name)==sha(fresh_scripts/name)
     probe_stage=stage/'real-rime-check'
     probe_command=[fresh/'Contents/MacOS/SquirrelLetterProbe',fresh/'Contents/Frameworks/librime.1.dylib',fresh/'Contents/Resources/LetterProbe',probe_stage,'asdfghjkl','true']
@@ -126,7 +126,7 @@ def main():
       'package':str(output),'bytes':output.stat().st_size,'sha256':sha(output),'identifier':identifier,'version':version,
       'target':'current console user ~/Library/Input Methods/SquirrelEnhancedDev.app',
       'installer_postinstall_declared':True,'installer_payload_overwrite_disabled':True,
-      'source_sha256':{str(p.relative_to(ROOT)):sha(p) for p in [Path(__file__),clean_source,project/'scripts/pkg-postinstall.sh',project/'scripts/pkg-user-install.sh',project/'scripts/app-install-transaction.sh']},
+      'source_sha256':{str(p.relative_to(ROOT)):sha(p) for p in [Path(__file__),clean_source,project/'scripts/pkg-postinstall.sh',project/'scripts/pkg-user-install.sh',project/'scripts/app-install-transaction.sh',project/'scripts/app-update-preparation.sh']},
       'binary_sha256':build['binary_sha256'],'checks':checks,'probe':probe,'clean_default_rime_probe':clean_probe,'extracted':str(expanded),
       'early_rejection_checks':[rejection,home_rejection],'forbidden_private_or_runtime_files':forbidden,
       'application_signing':'local self-signed certificate; both IPC peers pinned to exact certificate/identifier',

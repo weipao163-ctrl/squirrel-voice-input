@@ -9,7 +9,7 @@ def main():
     (project/'build').mkdir(exist_ok=True)
     (ROOT/'evidence').mkdir(exist_ok=True)
     work=Path(tempfile.mkdtemp(prefix='voice-target-',dir=project/'build'))
-    sources=[project/'Sources/NativeVoiceTargetSnapshot.swift',ROOT/'tools/NativeVoiceTargetProbe.swift']
+    sources=[project/'Sources/VoiceTargetSelection.swift',project/'Sources/KeyboardInputPosition.swift',project/'Sources/NativeVoiceTargetSnapshot.swift',ROOT/'tools/NativeVoiceTargetProbe.swift']
     output=work/'NativeVoiceTargetProbe'
     sdk=subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip()
     compile=subprocess.run(['xcrun','swiftc','-swift-version','5','-sdk',sdk,*map(str,sources),'-o',str(output)],capture_output=True,text=True,timeout=60)

@@ -76,11 +76,16 @@ private func notification(context:UnsafeMutableRawPointer?,session:RimeSessionId
     let axOnly=VoiceTargetSelection(native:unsupported,accessibility:ax)
     check("unsupported_imk_range_uses_verified_ax_range",axOnly?.matches(native:unsupported,accessibility:ax) == true)
     check("changing_imk_capability_revokes_target",axOnly?.matches(native:native,accessibility:ax) == false)
-    check("missing_ax_range_never_creates_target",VoiceTargetSelection(native:native,accessibility:nil) == nil)
-    check("unknown_ax_range_never_creates_target",VoiceTargetSelection(native:native,accessibility:unsupported) == nil)
-    check("ax_existing_selection_is_not_replaced",VoiceTargetSelection(native:native,accessibility:NSRange(location:20,length:2)) == nil)
-    check("native_existing_selection_is_not_replaced",VoiceTargetSelection(native:NSRange(location:3,length:2),accessibility:ax) == nil)
+    check("native_range_does_not_require_ax_range",VoiceTargetSelection(native:native,accessibility:nil) != nil)
+    check("unknown_ax_offset_does_not_reject_native_keyboard_range",VoiceTargetSelection(native:native,accessibility:unsupported) != nil)
+    check("ax_selection_is_frozen_in_its_own_coordinates",VoiceTargetSelection(native:native,accessibility:NSRange(location:20,length:2))?.matches(native:native,accessibility:NSRange(location:20,length:2)) == true)
+    check("native_selection_uses_keyboard_replacement_semantics",VoiceTargetSelection(native:NSRange(location:3,length:2),accessibility:ax)?.matches(native:NSRange(location:3,length:2),accessibility:ax) == true)
     check("empty_matching_ranges_remain_compatible",VoiceTargetSelection(native:ax,accessibility:ax)?.matches(native:ax,accessibility:ax) == true)
+    check("range_policy_preserves_unsupported_native_pair_for_session_verification",VoiceTargetSelection(native:NSRange(location:NSNotFound,length:NSNotFound),accessibility:nil) != nil)
+    check("range_policy_preserves_optional_ax_capability_independently",VoiceTargetSelection(native:NSRange(location:NSNotFound,length:NSNotFound),accessibility:NSRange(location:NSNotFound,length:NSNotFound)) != nil)
+    check("overflowing_selection_still_fails",VoiceTargetSelection(native:NSRange(location:Int.max-1,length:10),accessibility:ax) == nil)
+    let replacement=VoiceTargetSelection(native:NSRange(location:3,length:2),accessibility:ax)
+    check("replacement_selection_changes_revoke_target",replacement?.matches(native:NSRange(location:3,length:1),accessibility:ax) == false)
     let value:[String:Any]=["status":checks.allSatisfy{$0["passed"] as? Bool == true} ? "PASS" : "FAIL","checks":checks,
       "real_option_notifications":probe.notices,"deferred_label_reads":probe.deferredReads,"ignored_notifications":probe.ignoredReads,
       "real_rime_version":api.get_version().map{String(cString:$0)} ?? "unknown","microphone_used":false,"network_calls":0,"personal_dictionary_used":false,

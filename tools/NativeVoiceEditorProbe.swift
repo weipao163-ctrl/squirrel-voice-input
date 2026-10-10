@@ -54,6 +54,28 @@ private final class FakeVoiceSession:VoiceSession {
     }
     var checks:[[String:Any]]=[]
     func check(_ name:String,_ value:Bool) { checks.append(["name":name,"passed":value]) }
+    let microphoneMenu=MicrophonePopUpButton(frame:NSRect(x:10,y:212,width:560,height:24),pullsDown:false)
+    window.contentView?.addSubview(microphoneMenu)
+    var microphoneUID:String?="disconnected-fixture"
+    var selectionChanges=0
+    microphoneMenu.selectionChanged={ microphoneUID=$0; selectionChanges += 1 }
+    let microphoneDevices=[InputDevice(id:"usb-a",name:"USB microphone",device:1),
+                           InputDevice(id:"usb-b",name:"USB microphone",device:2)]
+    microphoneMenu.update(devices:microphoneDevices,selectedUID:microphoneUID)
+    check("missing_microphone_has_visible_selected_placeholder",microphoneMenu.title.contains("不可用") && !microphoneMenu.isHidden && microphoneMenu.window == window)
+    check("default_and_available_microphones_remain_selectable",microphoneMenu.numberOfItems == 4 && microphoneMenu.item(at:0)?.isEnabled == true && microphoneMenu.item(at:2)?.isEnabled == true)
+    check("duplicate_microphone_names_preserve_distinct_uids",microphoneMenu.item(at:2)?.representedObject as? String == "usb-a" && microphoneMenu.item(at:3)?.representedObject as? String == "usb-b")
+    check("inventory_refresh_never_silently_changes_selection",microphoneUID == "disconnected-fixture" && selectionChanges == 0)
+    microphoneMenu.selectItem(at:3); microphoneMenu.sendAction(microphoneMenu.action,to:microphoneMenu.target)
+    check("native_microphone_menu_can_select_replacement",microphoneUID == "usb-b" && selectionChanges == 1)
+    microphoneMenu.update(devices:[],selectedUID:microphoneUID)
+    check("unplugging_selected_microphone_preserves_default_menu",microphoneMenu.numberOfItems == 2 && microphoneMenu.title.contains("不可用") && microphoneUID == "usb-b")
+    microphoneMenu.selectItem(at:0); microphoneMenu.sendAction(microphoneMenu.action,to:microphoneMenu.target)
+    check("default_microphone_can_be_selected_when_all_devices_unavailable",microphoneUID == nil && selectionChanges == 2)
+    microphoneMenu.update(devices:[],selectedUID:nil)
+    check("empty_inventory_has_visible_default_selection",microphoneMenu.numberOfItems == 1 && microphoneMenu.title == "系统默认设备")
+    microphoneMenu.update(devices:microphoneDevices,selectedUID:"usb-a")
+    check("reconnected_microphone_restores_matching_selection_without_callback",microphoneMenu.numberOfItems == 3 && microphoneMenu.title == "USB microphone" && microphoneMenu.selectedItem?.representedObject as? String == "usb-a" && selectionChanges == 2)
     var permissionState:AVAuthorizationStatus = .notDetermined
     var requestCount=0
     var completion:((Bool)->Void)?
