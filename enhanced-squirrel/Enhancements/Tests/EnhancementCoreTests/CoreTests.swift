@@ -465,19 +465,19 @@ final class CoreTests:XCTestCase {
     XCTAssertThrowsError(try store.save(saved)); XCTAssertEqual(try store.load(),saved)
     XCTAssertEqual(store.lastValidReadOnly(),value)
   }
-  func testVoiceTargetEligibilityRequiresCurrentForegroundWritableNonsecureEvidence() {
+  func testVoiceTargetEligibilityRequiresCurrentForegroundNonsecureEnabledEvidence() {
     func allowed(pid:Int32? = 7,bundle:String? = "example.editor",client:String? = "example.editor",
-                 trusted:Bool = true,secure:Bool = false,role:String? = "AXTextArea",
-                 subrole:String? = nil,writable:Bool = true,expectedPID:Int32 = 7,expectedBundle:String? = "example.editor") -> Bool {
+                 trusted:Bool = true,secure:Bool = false,subrole:String? = nil,enabled:Bool? = nil,
+                 expectedPID:Int32 = 7,expectedBundle:String? = "example.editor") -> Bool {
       VoiceTargetEligibility.currentlyEligible(expectedPID:expectedPID,expectedBundle:expectedBundle,
         currentPID:pid,currentBundle:bundle,clientBundle:client,trusted:trusted,secureInput:secure,
-        role:role,subrole:subrole,writable:writable)
+        subrole:subrole,enabled:enabled)
     }
-    XCTAssertTrue(allowed()); XCTAssertTrue(allowed(role:"AXTextField"))
+    XCTAssertTrue(allowed()); XCTAssertTrue(allowed(enabled:true)); XCTAssertTrue(allowed(subrole:"AXSearchField"))
     XCTAssertFalse(allowed(pid:8)); XCTAssertFalse(allowed(pid:nil)); XCTAssertFalse(allowed(bundle:"other.app"))
     XCTAssertFalse(allowed(bundle:nil)); XCTAssertFalse(allowed(client:"other.app")); XCTAssertFalse(allowed(client:nil))
-    XCTAssertFalse(allowed(trusted:false)); XCTAssertFalse(allowed(secure:true)); XCTAssertFalse(allowed(writable:false))
-    XCTAssertFalse(allowed(role:nil)); XCTAssertFalse(allowed(role:"AXButton")); XCTAssertFalse(allowed(subrole:"AXSecureTextField"))
+    XCTAssertFalse(allowed(trusted:false)); XCTAssertFalse(allowed(secure:true)); XCTAssertFalse(allowed(enabled:false))
+    XCTAssertFalse(allowed(subrole:"AXSecureTextField"))
     XCTAssertFalse(allowed(expectedPID:0)); XCTAssertFalse(allowed(expectedPID:-1))
     XCTAssertFalse(allowed(expectedBundle:nil)); XCTAssertFalse(allowed(expectedBundle:""))
   }
