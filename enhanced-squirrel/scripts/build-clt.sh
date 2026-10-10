@@ -74,8 +74,8 @@ from pathlib import Path
 app,root=map(Path,sys.argv[1:])
 info=plistlib.loads((root/'resources/Info.plist').read_bytes())
 info.update(CFBundleIdentifier='org.rime.inputmethod.SquirrelEnhanced.Development',
-            CFBundleExecutable='SquirrelEnhancedDev',CFBundleVersion='0.1.20',
-            CFBundleShortVersionString='0.1.20',CFBundleSupportedPlatforms=['MacOSX'],
+            CFBundleExecutable='SquirrelEnhancedDev',CFBundleVersion='0.1.23',
+            CFBundleShortVersionString='0.1.23',CFBundleSupportedPlatforms=['MacOSX'],
             LSMinimumSystemVersion='13.0',SquirrelEnhancementTeamID='',SquirrelEnhancementCertificateSHA1=os.environ['local_certificate_sha1'])
 # Team ID is never fabricated; local trust is an exact certificate pin.
 icon=root/'build/runtime-icon.icns'
@@ -88,7 +88,7 @@ else:
 helper={'CFBundleIdentifier':'org.rime.SquirrelEnhanced.Development.VoiceHelper',
  'CFBundleExecutable':'SquirrelVoiceHelper','CFBundleName':'鼠须管增强设置开发版',
  'CFBundleDisplayName':'鼠须管增强设置开发版','LSUIElement':True,
- 'CFBundlePackageType':'APPL','CFBundleVersion':'0.1.20','CFBundleShortVersionString':'0.1.20',
+ 'CFBundlePackageType':'APPL','CFBundleVersion':'0.1.23','CFBundleShortVersionString':'0.1.23',
  'LSMinimumSystemVersion':'13.0','SquirrelEnhancementTeamID':'',
  'SquirrelEnhancementCertificateSHA1':os.environ['local_certificate_sha1'],
  'NSMicrophoneUsageDescription':'仅在明确按住说话或主动测试时采集；云识别会向您选择并配置的语音服务发送音频。'}
@@ -117,6 +117,9 @@ if (app/'Contents/Resources/RimeIcon.icns').exists():
 PY
 xcrun clang++ -std=c++17 -O2 -Wall -Wextra -isysroot "$sdk" -mmacosx-version-min=13.0 \
   -I librime/src Enhancements/Native/LetterProbe.cpp -o "$app/Contents/MacOS/SquirrelLetterProbe"
+# Remove debug-only object/module paths from distributable executables before
+# signing. Keep runtime symbols and Objective-C/Swift metadata intact.
+/usr/bin/strip -S "$app/Contents/MacOS/SquirrelEnhancedDev" "$helper/Contents/MacOS/SquirrelVoiceHelper"
 # Public librime archives can contain unsigned libraries. Sign the copied
 # runtime components before signing their parent; do not alter downloaded files.
 while IFS= read -r -d '' library; do

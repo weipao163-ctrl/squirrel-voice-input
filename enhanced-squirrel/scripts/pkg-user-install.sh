@@ -11,9 +11,6 @@ done
 /usr/bin/codesign --verify --deep --strict "$source_app"
 identifier="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$source_app/Contents/Info.plist")"
 [[ "$identifier" == org.rime.inputmethod.SquirrelEnhanced.Development ]] || exit 2
-if /usr/bin/pgrep -f '^.*/SquirrelEnhancedDev.app/Contents/(MacOS/|Resources/SquirrelVoiceHelper.app/Contents/MacOS/)' >/dev/null; then
-  echo '增强版正在运行。请切换到其他输入源并退出增强版，再重新安装；安装器不会强制结束输入法。' >&2; exit 2
-fi
 if [[ -e "$target" ]]; then
   [[ -d "$target" ]] || { echo '目标身份冲突，保留现场。' >&2; exit 2; }
   old_identifier="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$target/Contents/Info.plist")"
@@ -21,8 +18,14 @@ if [[ -e "$target" ]]; then
   # as an input method by macOS. It receives the same recoverable app backup.
   [[ "$old_identifier" == "$identifier" || "$old_identifier" == org.rime.SquirrelEnhanced.Development ]] || { echo '目标身份冲突，保留现场。' >&2; exit 2; }
 fi
+source "$script_directory/app-update-preparation.sh"
+prepare_development_app_update "$source_app" "$target"
 source "$script_directory/app-install-transaction.sh"
 install_development_app "$source_app" "$target" "$backup_root"
 # Installer explicitly enables only this isolated source and never selects it.
-/usr/bin/open -g "$target"
-"$target/Contents/MacOS/SquirrelEnhancedDev" --enable-input-source org.rime.inputmethod.SquirrelEnhanced.Development.Hans
+if ! /usr/bin/open -g "$target"; then
+  echo '程序文件已安装；系统尚未允许启动。请按安装完成页操作后重新登录。' >&2
+fi
+if ! "$target/Contents/MacOS/SquirrelEnhancedDev" --enable-input-source org.rime.inputmethod.SquirrelEnhanced.Development.Hans; then
+  echo '程序文件已安装；输入源暂未启用。请重新登录后在系统设置中添加增强版。' >&2
+fi

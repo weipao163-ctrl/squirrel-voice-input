@@ -18,7 +18,7 @@ account_home="$(/usr/bin/dscl . -read "/Users/$account" NFSHomeDirectory | /usr/
 staging="$(/usr/bin/mktemp -d /private/tmp/sqv-install.XXXXXX)"
 trap '/bin/rm -rf "$staging"' EXIT
 /usr/bin/ditto "$script_directory/SquirrelEnhancedDev.app" "$staging/SquirrelEnhancedDev.app"
-/bin/cp "$script_directory/pkg-user-install.sh" "$script_directory/app-install-transaction.sh" "$staging/"
+/bin/cp "$script_directory/pkg-user-install.sh" "$script_directory/app-install-transaction.sh" "$script_directory/app-update-preparation.sh" "$staging/"
 /usr/sbin/chown -R root:wheel "$staging"
 /bin/chmod -R a+rX "$staging"
 /bin/chmod 755 "$staging"
