@@ -2,76 +2,137 @@ import AppKit
 import InputMethodKit
 import ApplicationServices
 
-// Some embedded web views implement IMK text input but expose no AX focused
-// element. Use the same current-selection rectangle as the keyboard candidate
-// panel, without inventing an absolute document offset or reading its text.
+// The active keyboard text client is authoritative. AX supplies optional
+// identity/range/window evidence, never an application or editable-role list.
 struct NativeVoiceTargetSnapshot {
   struct Window: Equatable {
     let number: CGWindowID
     let frame: NSRect
   }
-  let selection: NSRange
-  let caret: NSRect
+  struct WindowCandidate {
+    let processID: Int32
+    let layer: Int32
+    let window: Window
+  }
+  private let ranges: VoiceTargetSelection
+  var selection: NSRange { ranges.native }
+  let caret: NSRect?
   let window: Window
-  private let finderRename: Bool
+  let clientIdentifier: String?
+  let windowLevel: CGWindowLevel
 
-  static func allowsFallback(_ error: AXError) -> Bool {
-    error == .noValue || error == .attributeUnsupported
+  static func allowsMissingMetadata(_ error: AXError) -> Bool {
+    // A busy AX server does not revoke a working IMK text client. Permission
+    // denial and invalid object identities still fail closed.
+    error == .success || error == .noValue || error == .attributeUnsupported || error == .notImplemented || error == .cannotComplete
   }
-  static func allowsWindowFallback(bundleID: String, error: AXError) -> Bool {
-    bundleID == "com.apple.finder" && allowsFallback(error)
+  static func validSelection(_ range: NSRange) -> Bool {
+    VoiceTargetSelection.valid(range)
   }
-  static func capture(client: IMKTextInput, finderRename: Bool = false, windowAt: (NSRect) -> Window?) -> Self? {
-    let range = client.selectedRange()
-    // NSNotFound is retained as an unsupported offset. A known empty selection
-    // and a verifiable on-screen caret are still required; unknown length fails.
-    guard range.location >= 0 else { return nil }
-    if finderRename {
-      // Finder's inline filename editor selects the basename on entry. The
-      // user's rename operation explicitly owns that selection. This exception
-      // never applies to other apps, unknown replacement offsets, or marked
-      // text. A known empty selection keeps the existing offset-less IMK path.
-      guard client.bundleIdentifier() == "com.apple.finder",
-            range.length != NSNotFound,range.length >= 0,range.length <= 1024,
-            (range.length == 0 || range.location != NSNotFound),
-            client.markedRange().location == NSNotFound else { return nil }
-    } else if range.length != 0 { return nil }
-    var rect = NSRect.zero
-    // The index is relative to the inline session, not the document. With no
-    // marked text, index 0 asks for the current selection (IMKInputSession.h).
-    client.attributes(forCharacterIndex: 0, lineHeightRectangle: &rect)
-    if finderRename && range.location != NSNotFound && !validCaret(rect) {
-      var actual=NSRange(location:NSNotFound,length:0)
-      rect=client.firstRect(forCharacterRange:NSRange(location:range.location,length:0),actualRange:&actual)
+  static func capture(client: IMKTextInput, accessibilitySelection: NSRange? = nil,
+      hasAccessibilityIdentity: Bool = false, windowAt: (NSRect?) -> Window?) -> Self? {
+    let range = client.selectedRange(), marked = client.markedRange()
+    guard (marked.length == 0 && marked.location >= 0) ||
+      (marked.location == NSNotFound && marked.length == NSNotFound) else { return nil }
+    // Freeze each supported/unsupported coordinate space, without inventing
+    // offsets. Missing range APIs need independent native session evidence.
+    guard let ranges = VoiceTargetSelection(native:range,accessibility:accessibilitySelection) else { return nil }
+    let caret = KeyboardInputPosition.caret(client: client)
+    let hasKnownSelection = validSelection(range) || accessibilitySelection.map(validSelection) == true
+    // Some native hosts return a new identifier on every query (including
+    // TextEdit). It must not override a working keyboard caret/range/window.
+    // Only use it as supplementary evidence when a range or caret is absent,
+    // and require two consecutive queries to identify the same session.
+    var identifier: String?
+    if !hasKnownSelection || caret == nil {
+      let first: String? = client.uniqueClientIdentifierString()
+      let second: String? = client.uniqueClientIdentifierString()
+      if let first, !first.isEmpty, first == second { identifier = first }
     }
-    guard validCaret(rect), let window = windowAt(rect) else { return nil }
-    return Self(selection: range, caret: rect, window: window, finderRename:finderRename)
+    if !hasKnownSelection { guard caret != nil,identifier != nil else { return nil } }
+    // Placement is optional when field/window identity, a native session ID and
+    // a known selection provide independent evidence of the keyboard target.
+    if caret == nil {
+      guard hasAccessibilityIdentity, identifier != nil,
+            (range.location != NSNotFound || (accessibilitySelection?.location != nil && accessibilitySelection?.location != NSNotFound)),
+            hasKnownSelection else { return nil }
+    }
+    guard let window = windowAt(caret) else { return nil }
+    return Self(ranges: ranges, caret: caret, window: window, clientIdentifier: identifier, windowLevel: client.windowLevel())
   }
-  func matches(client: IMKTextInput, windowAt: (NSRect) -> Window?) -> Bool {
-    guard let current = Self.capture(client: client, finderRename:finderRename, windowAt: windowAt) else { return false }
-    return selection == current.selection && caret == current.caret && window == current.window
+  func mismatch(client: IMKTextInput, accessibilitySelection: NSRange? = nil,
+      hasAccessibilityIdentity: Bool = false, windowAt: (NSRect?) -> Window?) -> String? {
+    guard let current = Self.capture(client:client,accessibilitySelection:accessibilitySelection,
+      hasAccessibilityIdentity:hasAccessibilityIdentity,windowAt:windowAt) else { return "native-position-unavailable" }
+    if !ranges.matches(native:current.selection,accessibility:accessibilitySelection) { return "native-selection-changed" }
+    if caret != current.caret { return "native-caret-changed" }
+    if window != current.window { return "native-window-changed" }
+    if clientIdentifier != current.clientIdentifier { return "native-client-identifier-changed" }
+    if windowLevel != current.windowLevel { return "native-window-level-changed" }
+    return nil
   }
-  static func validCaret(_ rect: NSRect) -> Bool {
-    [rect.minX, rect.minY, rect.width, rect.height].allSatisfy { $0.isFinite } &&
-      rect.size.width >= 0 && rect.size.height > 0 &&
-      NSScreen.screens.contains { $0.frame.intersects(rect.insetBy(dx: -1, dy: -1)) }
+  func matches(client: IMKTextInput, accessibilitySelection: NSRange? = nil,
+      hasAccessibilityIdentity: Bool = false, windowAt: (NSRect?) -> Window?) -> Bool {
+    mismatch(client:client,accessibilitySelection:accessibilitySelection,
+      hasAccessibilityIdentity:hasAccessibilityIdentity,windowAt:windowAt) == nil
   }
-  static func frontWindow(processID: Int32, caret: NSRect, includeFinderDesktop: Bool = false) -> Window? {
-    guard let top = NSScreen.screens.first?.frame.maxY,
-          let windows = CGWindowListCopyWindowInfo(includeFinderDesktop ? [.optionOnScreenOnly] : [.optionOnScreenOnly,.excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
-    for info in windows {
-      guard (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == processID,
-            let layer=info[kCGWindowLayer as String] as? NSNumber,
-            layer.int32Value == 0 || (includeFinderDesktop && layer.int32Value == CGWindowLevelForKey(.desktopIconWindow)),
-            let number=info[kCGWindowNumber as String] as? NSNumber,
-            let bounds=info[kCGWindowBounds as String] as? NSDictionary,
-            let frame=CGRect(dictionaryRepresentation:bounds) else { continue }
-      let converted=NSRect(x:frame.minX,y:top-frame.maxY,width:frame.width,height:frame.height)
-      if converted.insetBy(dx:-2,dy:-2).contains(NSPoint(x:caret.midX,y:caret.midY)) {
-        return Window(number:number.uint32Value,frame:converted)
+  static func accessibilityWindowFrame(_ window: AXUIElement) -> NSRect? {
+    func attribute(_ key: String) -> AXValue? {
+      var value: CFTypeRef?
+      guard AXUIElementCopyAttributeValue(window,key as CFString,&value) == .success,
+            let value,CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+      return unsafeBitCast(value,to:AXValue.self)
+    }
+    var position=CGPoint.zero, size=CGSize.zero
+    guard let point=attribute(kAXPositionAttribute),let dimensions=attribute(kAXSizeAttribute),
+          AXValueGetValue(point,.cgPoint,&position),AXValueGetValue(dimensions,.cgSize,&size),
+          let top=NSScreen.screens.first?.frame.maxY,
+          [position.x,position.y,size.width,size.height].allSatisfy({$0.isFinite}),
+          size.width > 0,size.height > 0 else { return nil }
+    return NSRect(x:position.x,y:top-position.y-size.height,width:size.width,height:size.height)
+  }
+  static func ownedWindow(processID: Int32, caret: NSRect?, candidates: [WindowCandidate],
+      verifiedFrame: NSRect? = nil, windowLevel: CGWindowLevel = 0) -> Window? {
+    let desktopLevel = CGWindowLevelForKey(.desktopIconWindow)
+    let expectedFrame: NSRect?
+    if let verifiedFrame, let caret,
+       !verifiedFrame.insetBy(dx:-2,dy:-2).contains(NSPoint(x:caret.midX,y:caret.midY)) {
+      expectedFrame = nil // Native popover outside its AX parent window.
+    } else { expectedFrame = verifiedFrame }
+    var firstOrdinaryWindow = true
+    for candidate in candidates {
+      guard candidate.processID == processID,
+            candidate.layer == 0 || candidate.layer == windowLevel || candidate.layer == desktopLevel else { continue }
+      let frame = candidate.window.frame
+      if let expectedFrame {
+        guard abs(frame.minX-expectedFrame.minX) <= 2, abs(frame.minY-expectedFrame.minY) <= 2,
+              abs(frame.width-expectedFrame.width) <= 2, abs(frame.height-expectedFrame.height) <= 2 else { continue }
+      } else if candidate.layer != desktopLevel {
+        // Do not choose a covered, stale document window using caret alone.
+        guard firstOrdinaryWindow else { continue }
+        firstOrdinaryWindow = false
       }
-      if !includeFinderDesktop { return nil } // Preserve the usual top-window rule.
+      if let caret {
+        if frame.insetBy(dx:-2,dy:-2).contains(NSPoint(x:caret.midX,y:caret.midY)) { return candidate.window }
+      } else if expectedFrame != nil { return candidate.window }
     }
     return nil
+  }
+  static func frontWindow(processID: Int32, caret: NSRect?, verifiedFrame: NSRect? = nil,
+      windowLevel: CGWindowLevel = 0) -> Window? {
+    guard let top = NSScreen.screens.first?.frame.maxY,
+          let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String:Any]] else { return nil }
+    let candidates = windows.compactMap { info -> WindowCandidate? in
+      guard let owner = info[kCGWindowOwnerPID as String] as? NSNumber,
+            let layer = info[kCGWindowLayer as String] as? NSNumber,
+            let number = info[kCGWindowNumber as String] as? NSNumber,
+            let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+            let frame = CGRect(dictionaryRepresentation:bounds) else { return nil }
+      let converted = NSRect(x:frame.minX,y:top-frame.maxY,width:frame.width,height:frame.height)
+      return WindowCandidate(processID:owner.int32Value,layer:layer.int32Value,
+        window:Window(number:number.uint32Value,frame:converted))
+    }
+    return ownedWindow(processID:processID,caret:caret,candidates:candidates,
+      verifiedFrame:verifiedFrame,windowLevel:windowLevel)
   }
 }

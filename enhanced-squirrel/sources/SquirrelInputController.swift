@@ -705,8 +705,7 @@ private extension SquirrelInputController {
   // swiftlint:disable:next function_parameter_count
   func showPanel(preedit: String, selRange: NSRange, caretPos: Int, candidates: [String], comments: [String], labels: [String], highlighted: Int, page: Int, lastPage: Bool) {
     guard let client = client else { return }
-    var inputPos = NSRect()
-    client.attributes(forCharacterIndex: 0, lineHeightRectangle: &inputPos)
+    let inputPos = KeyboardInputPosition.caret(client:client) ?? .zero
     if let panel = NSApp.squirrelAppDelegate.panel {
       panel.position = inputPos
       panel.inputController = self
@@ -861,8 +860,8 @@ extension SquirrelInputController: EnhancementInput {
             NSWorkspace.shared.frontmostApplication?.processIdentifier == originalPID else {
         throw EnhancementTarget.CaptureFailure.unavailable
       }
-      let target=try EnhancementTarget(client:client,generation:inputGeneration)
-      guard target.valid else { throw EnhancementTarget.CaptureFailure.unavailable }
+      let target=try EnhancementTarget(client:client,generation:inputGeneration,ownedKeyCodes:settings.voice.binding?.codes ?? [])
+      guard target.matches(client:client,generation:inputGeneration) else { throw EnhancementTarget.CaptureFailure.unavailable }
       voiceCapturePending=false; voiceTarget=target
       target.invalidated={ [weak self] in self?.enhancementInvalidated() }
       EnhancementPreview.shared.begin(identity,showPreview:settings.voice.showPreview,
@@ -902,30 +901,48 @@ extension SquirrelInputController: EnhancementInput {
     // Capability metadata only: no value, filename, selected text, coordinates,
     // clipboard, microphone, Keychain or recognition request.
     let range=client.selectedRange()
+    let marked=client.markedRange()
+    report["native_marked_length_known"]=marked.length != NSNotFound
+    report["native_has_marked_text"]=marked.length != NSNotFound && marked.length > 0
+    let nativeIdentifier: String? = client.uniqueClientIdentifierString()
+    report["native_client_identifier_available"]=nativeIdentifier?.isEmpty == false
     report["native_selection_length_known"]=range.length != NSNotFound
     report["native_has_selection"]=range.length != NSNotFound && range.length > 0
     report["native_offset_known"]=range.location != NSNotFound
-    var caret=NSRect.zero; client.attributes(forCharacterIndex:0,lineHeightRectangle:&caret)
-    report["native_caret_available"]=NativeVoiceTargetSnapshot.validCaret(caret)
+    let caret=KeyboardInputPosition.caret(client:client)
+    report["native_caret_available"]=caret != nil
+    report["target_strategy"]="shared-native-keyboard-client"
+    report["client_matches_front_app"]=client.bundleIdentifier() == NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     if let front=NSWorkspace.shared.frontmostApplication {
-      report["finder_target"]=front.bundleIdentifier == "com.apple.finder"
-      report["native_window_available"]=NativeVoiceTargetSnapshot.frontWindow(processID:front.processIdentifier,caret:caret,includeFinderDesktop:front.bundleIdentifier == "com.apple.finder") != nil
-      if front.bundleIdentifier == "com.apple.finder",client.bundleIdentifier() == "com.apple.finder" {
-        var actual=NSRange(location:NSNotFound,length:NSNotFound)
-        let first=client.firstRect(forCharacterRange:NSRange(location:0,length:0),actualRange:&actual)
-        report["native_first_rect_available"]=NativeVoiceTargetSnapshot.validCaret(first)
-      }
+      report["native_window_available"]=NativeVoiceTargetSnapshot.frontWindow(processID:front.processIdentifier,
+        caret:caret,windowLevel:client.windowLevel()) != nil
       let app=AXUIElementCreateApplication(front.processIdentifier);AXUIElementSetMessagingTimeout(app,0.3)
       var focus:CFTypeRef?
       let error=AXUIElementCopyAttributeValue(app,kAXFocusedUIElementAttribute as CFString,&focus)
       report["ax_focus_error"]=error.rawValue
+      if error == .success,let focus,CFGetTypeID(focus) == AXUIElementGetTypeID() {
+        let element=unsafeBitCast(focus,to:AXUIElement.self)
+        for (key,name) in [(kAXRoleAttribute,"ax_role"),(kAXSubroleAttribute,"ax_subrole")] {
+          var value:CFTypeRef?
+          if AXUIElementCopyAttributeValue(element,key as CFString,&value) == .success,let value=value as? String {
+            report[name]=String(value.prefix(64))
+          }
+        }
+      }
       var focusedWindow:CFTypeRef?
-      report["ax_window_error"]=AXUIElementCopyAttributeValue(app,kAXFocusedWindowAttribute as CFString,&focusedWindow).rawValue
+      let windowError=AXUIElementCopyAttributeValue(app,kAXFocusedWindowAttribute as CFString,&focusedWindow)
+      report["ax_window_error"]=windowError.rawValue
+      if windowError == .success,let focusedWindow,CFGetTypeID(focusedWindow) == AXUIElementGetTypeID(),
+         let frame=NativeVoiceTargetSnapshot.accessibilityWindowFrame(unsafeBitCast(focusedWindow,to:AXUIElement.self)) {
+        report["native_window_with_ax_frame_available"]=NativeVoiceTargetSnapshot.frontWindow(
+          processID:front.processIdentifier,caret:caret,verifiedFrame:frame) != nil
+      }
     }
     do {
       let target=try EnhancementTarget(client:client,generation:inputGeneration)
       let matches=target.matches(client:client,generation:inputGeneration)
       report["target_verified"]=matches
+      if let reason=target.mismatchReason { report["mismatch_reason"]=reason }
       reply(matches ? "\(target.verificationDescription)的位置检查通过；未采音、未联网。" :
         "输入框在检查期间发生变化；未采音、未联网。")
     } catch {
@@ -985,6 +1002,9 @@ extension SquirrelInputController: EnhancementInput {
           !value.text.unicodeScalars.contains(where:{CharacterSet.controlCharacters.union(.newlines).contains($0)})
         if valid, let client {
           voiceAttempted = true // Before insertion. Do not retry an unknown native outcome.
+          // Own writes may synchronously produce AX value/selection notices.
+          // The original target is verified; retire its guard before committing.
+          voiceTarget?.invalidate()
           // Reuse the ordinary keyboard commit, including the marked-text
           // compatibility option required by some embedded web clients.
           withExtendedLifetime(client) { commit(string:value.text) }

@@ -127,6 +127,31 @@ final class SquirrelInstaller {
     return unsafeBitCast(idRef, to: CFString?.self) as String?
   }
 
+  // Only an explicit package upgrade uses this. Switching away lets IMK
+  // finish/deactivate its current composition before cooperative termination.
+  // Never enables, disables or changes the user's other input sources.
+  func selectKeyboardLayoutForUpdate() -> OSStatus {
+    guard let current=Self.currentInputSourceID(),
+      current.hasPrefix("org.rime.inputmethod.SquirrelEnhanced.Development") ||
+      current.hasPrefix("org.rime.SquirrelEnhanced.Development") else { return noErr }
+    let layouts=inputSources.filter { _,source in
+      let pointer=TISGetInputSourceProperty(source,kTISPropertyInputSourceType)
+      let kind=unsafeBitCast(pointer,to:CFString?.self)
+      return kind == kTISTypeKeyboardLayout &&
+        getBool(for:source,key:kTISPropertyInputSourceIsEnabled) == true &&
+        getBool(for:source,key:kTISPropertyInputSourceIsSelectCapable) == true
+    }.sorted { left,right in
+      if left.key == "com.apple.keylayout.ABC" { return true }
+      if right.key == "com.apple.keylayout.ABC" { return false }
+      return left.key < right.key
+    }
+    for (_,source) in layouts {
+      let status=TISSelectInputSource(source)
+      if status == noErr { return status }
+    }
+    return OSStatus(paramErr)
+  }
+
   func disable(modes: [InputMode] = []) {
     let modesToDisable = modes.isEmpty ? InputMode.allCases : modes
     for (mode, inputSource) in getInputSource(modes: modesToDisable) {

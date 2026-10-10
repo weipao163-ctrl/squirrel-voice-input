@@ -103,19 +103,3 @@ func readyRimeOptionLabels(api:RimeApi_stdbool,session:RimeSessionId,name:String
       copy(api.get_state_label_abbreviated(session,option,state,false)))
   }
 }
-
-// IMK and AX can report different coordinate spaces (for example, a native
-// editor slice versus the full accessibility value). Freeze each independently.
-// AX is mandatory; an unsupported IMK selection is not invented as offset zero.
-struct VoiceTargetSelection {
-  let native:NSRange
-  let accessibility:NSRange
-  init?(native:NSRange,accessibility:NSRange?) {
-    guard let accessibility,accessibility.location != NSNotFound,accessibility.length == 0,
-          native.length == 0 else { return nil }
-    self.native=native; self.accessibility=accessibility
-  }
-  func matches(native:NSRange,accessibility:NSRange?) -> Bool {
-    native == self.native && accessibility == self.accessibility
-  }
-}

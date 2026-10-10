@@ -85,8 +85,24 @@ struct SquirrelApp {
           return true
         case "--quit":
           let bundleId = Bundle.main.bundleIdentifier!
-          let runningSquirrels = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+          let updatePath=args.count == 4 && args[2] == "--installed-app-path" ? args[3] : nil
+          if let path=updatePath {
+            guard path.hasPrefix("/"),!path.contains("\n") else { exit(EXIT_FAILURE) }
+            guard installer.selectKeyboardLayoutForUpdate() == noErr else {
+              print("无法暂时切换到键盘输入源；原应用与输入内容保留，未开始替换。")
+              exit(EXIT_FAILURE)
+            }
+          }
+          let identities=updatePath == nil ? [bundleId] : [bundleId,"org.rime.SquirrelEnhanced.Development"]
+          let runningSquirrels=identities.flatMap {
+            NSRunningApplication.runningApplications(withBundleIdentifier:$0)
+          }.filter { application in
+            guard application.processIdentifier != getpid() else { return false }
+            guard let path=updatePath else { return true }
+            return application.bundleURL?.standardizedFileURL == URL(fileURLWithPath:path).standardizedFileURL
+          }
           let helperURLs=Set(runningSquirrels.compactMap { $0.bundleURL?.appendingPathComponent("Contents/Resources/SquirrelVoiceHelper.app").standardizedFileURL })
+            .union(updatePath.map { [URL(fileURLWithPath:$0).appendingPathComponent("Contents/Resources/SquirrelVoiceHelper.app").standardizedFileURL] } ?? [])
           func runningHelpers() -> [NSRunningApplication] {
             NSRunningApplication.runningApplications(withBundleIdentifier:"org.rime.SquirrelEnhanced.Development.VoiceHelper")
               .filter { $0.bundleURL.map{helperURLs.contains($0.standardizedFileURL)} == true }
@@ -95,7 +111,7 @@ struct SquirrelApp {
           // existing unsaved-edit dialog remains authoritative; never turn a
           // maintenance quit into forced owner-loss cleanup/discard.
           runningHelpers().forEach { _ = $0.terminate() }
-          let deadline=Date(timeIntervalSinceNow:8)
+          let deadline=Date(timeIntervalSinceNow:updatePath == nil ? 8 : 60)
           while !runningHelpers().isEmpty && Date() < deadline {
             RunLoop.current.run(until:Date(timeIntervalSinceNow:0.1))
           }
