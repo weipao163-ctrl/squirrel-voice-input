@@ -51,9 +51,22 @@ swift test --package-path enhanced-squirrel/Enhancements
 python3 tools/run_macos_core.py
 # 离线原生目标快照夹具：不采音、不联网
 python3 tools/run_native_voice_target.py
+# 完成本地证书构建后，IPC 测试复用构建记录中的 SDK
+python3 tools/run_native_ipc_trust.py
 ```
 
 其他原生音频、候选、IPC、编辑器和 Rime 测试入口在 `tools/`。部分入口需要先完成本地构建或前台夹具窗口。输出写入被忽略的 `evidence/` 和 `build/`，不要直接上传本机报告。
+
+## 生成安装包
+
+完成本地签名构建和上面的原生目标／IPC 回归后，再记录构建来源并生成包：
+
+```bash
+python3 tools/record_macos_build.py
+python3 tools/build_macos_installer.py
+```
+
+打包入口要求来源绑定的构建与 IPC 报告，重新解开实际候选包核对文件、签名，并在空白用户数据中运行字母与全部默认方案检查。公开包还需检查个人词库、设置、凭据、私钥、录音和本机路径；本机完整报告不能直接作为公开发布附件。
 
 ## 自行安装
 
