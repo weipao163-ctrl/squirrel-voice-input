@@ -2,13 +2,15 @@
 macos系统下当前唯一一款支持字母选词的中文输入法
 基于 [Rime / Squirrel](https://github.com/rime/squirrel) 的 macOS 输入法扩展，让拼音输入、空格进入字母选词，以及按住热键说话在同一套输入法中协作。
 
-这是社区衍生项目，并非 Rime、阿里云或火山引擎的官方产品。当前源码版本为 **0.1.23**，主程序运行要求 **macOS 13+**；已构建与使用验证的主要环境为 Apple Silicon。Git 代码区提供源码、开发文档、测试及公开默认资源；[Releases](https://github.com/weipao163-ctrl/squirrel-voice-input/releases) 提供可安装的 Apple Silicon 安装包。**源码和安装包均不包含个人词库或预置 API Key**。
+这是社区衍生项目，并非 Rime、阿里云或火山引擎的官方产品。当前源码版本为 **0.1.24**，主程序运行要求 **macOS 13+**；已构建与使用验证的主要环境为 Apple Silicon。Git 代码区提供源码、开发文档、测试及公开默认资源；[Releases](https://github.com/weipao163-ctrl/squirrel-voice-input/releases) 提供可安装的 Apple Silicon 安装包。**源码和安装包均不包含个人词库或预置 API Key**。
 
 0.1.23 将语音目标统一到普通拼音的原生输入会话。TextEdit、WPS 工作簿、单元格编辑与公式栏已通过本机位置复核，用户确认文档和表格可输入；详见 [验证范围](docs/VALIDATION.md)。
 
+0.1.24 修复按住说话时把重绘通知与短暂位置查询超时误判为目标失效的问题，详见[修复与验证说明](docs/2026-10-11_fix-voice-interruption-report.md)。源码与安装包同步发布于 v0.1.24，组件检查与真人使用复验的范围分别记录。
+
 ## 下载与安装
 
-从 [v0.1.23 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.23) 下载 `.pkg` 安装包及 SHA-256 校验文件，按照 [安装说明](docs/INSTALLATION.md) 安装。适用于 **Apple Silicon（M 系列）与 macOS 13+**；本次没有 Intel 安装包。
+从 [v0.1.24 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.24) 下载 `.pkg` 安装包及 SHA-256 校验文件，按照 [安装说明](docs/INSTALLATION.md) 安装。适用于 **Apple Silicon（M 系列）与 macOS 13+**；本次没有 Intel 安装包。
 
 **首次安装需要手动允许：安装包未使用 Apple Developer ID 签名或公证，若 macOS 拦截，请在「系统设置 → 隐私与安全（性）」点击「仍要打开」并确认安装。** 不需要关闭系统安全保护。具体步骤见 [Apple 官方说明](https://support.apple.com/zh-cn/102445)。
 
