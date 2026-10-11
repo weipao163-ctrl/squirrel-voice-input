@@ -187,6 +187,59 @@ final class FixtureTextClient: NSObject, IMKTextInput {
     check("native_geometry_does_not_require_optional_client_identifier",capture() != nil)
     check("position_capture_never_reads_document_text",client.textReads == 0)
     check("position_capture_never_probes_by_inserting_or_marking",client.textWrites == 0)
+    // Reproduce idle AX notification storms against the production monitor
+    // and snapshot. The old observer revoked without checking any of these.
+    var samples = 0, revocations = 0
+    let monitor = VoiceTargetMonitor(verify: {
+      samples += 1
+      return snapshot?.matches(client:client,windowAt:{ _ in window }) == true ? .verified : .changed("native-selection-changed")
+    }, invalidated: { _ in revocations += 1 })
+    for _ in 0..<500 { monitor.scheduleInspection() }
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.06))
+    check("500_idle_redraw_notices_keep_original_keyboard_target",monitor.valid && revocations == 0)
+    check("notification_storm_coalesces_into_one_native_inspection",samples == 1)
+    client.range.location += 1
+    monitor.scheduleInspection()
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.06))
+    check("notification_with_actual_cursor_change_revokes_once",!monitor.valid && revocations == 1)
+    client.range.location -= 1
+    check("returning_to_old_position_does_not_rearm_revoked_session",!monitor.inspect() && revocations == 1)
+    var now:TimeInterval = 100, verdict:VoiceTargetMonitor.Verification = .unavailable("ax-busy")
+    var revoked = 0
+    let transient = VoiceTargetMonitor(clock:{ now },verify:{ verdict },invalidated:{ _ in revoked += 1 })
+    check("single_ax_timeout_retains_recording_but_cannot_authorize_insertion",!transient.inspect() && transient.valid)
+    now += 0.3
+    check("short_ax_timeout_stays_pending",!transient.inspect() && transient.valid)
+    verdict = .verified
+    check("same_target_recovery_clears_transient_timeout",transient.inspect() && transient.valid && revoked == 0)
+    verdict = .unavailable("ax-busy");now += 1
+    _ = transient.inspect();now += 0.9
+    check("persistent_ax_loss_revokes_at_bounded_deadline",!transient.inspect() && !transient.valid && revoked == 1)
+    for reason in ["security-changed","input-source-changed","ax-input-identity-changed","window-changed"] {
+      let changed = VoiceTargetMonitor(verify:{ .changed(reason) },invalidated:{ _ in revoked += 1 })
+      check("confirmed_\(reason)_never_receives_timeout_grace",!changed.inspect() && !changed.valid)
+    }
+    verdict = .unavailable("ax-busy")
+    let delivery = VoiceTargetMonitor(verify:{ verdict },invalidated:{ _ in revoked += 1 })
+    var delivered:Bool?
+    delivery.verifyForDelivery { delivered = $0 }
+    check("pending_verification_does_not_deliver_using_last_good_target",delivered == nil)
+    verdict = .verified
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.15))
+    check("delivery_retries_transient_loss_and_requires_fresh_success",delivered == true && delivery.valid)
+    let lost = VoiceTargetMonitor(retryLimit:0.15,verify:{ .unavailable("ax-busy") },invalidated:{ _ in revoked += 1 })
+    var denied:Bool?
+    lost.verifyForDelivery { denied = $0 }
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.3))
+    check("persistent_unavailable_target_never_receives_automatic_text",denied == false && !lost.valid)
+    var queries = 0
+    let stopped = VoiceTargetMonitor(verify:{ queries += 1;return .verified },invalidated:{ _ in revoked += 1 })
+    stopped.scheduleInspection();stopped.invalidate()
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.06))
+    check("cancelled_session_ignores_queued_notification_inspection",queries == 0 && !stopped.valid)
+    var reentrant:VoiceTargetMonitor!
+    reentrant = VoiceTargetMonitor(verify:{ reentrant.invalidate(); return .verified },invalidated:{ _ in revoked += 1 })
+    check("reentrant_host_lifecycle_cannot_authorize_stale_insertion",!reentrant.inspect())
     let report: [String:Any] = ["status":checks.allSatisfy { $0["passed"] as? Bool == true } ? "PASS" : "FAIL",
       "checks":checks,"microphone_used":false,"cloud_calls":0,"document_text_read":false,
       "scope":"Production shared keyboard geometry, native input target capabilities and owned-window binding with controlled text clients; not live app or audio acceptance"]

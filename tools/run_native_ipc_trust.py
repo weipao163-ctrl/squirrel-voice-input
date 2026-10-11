@@ -17,6 +17,7 @@ def run(argv, timeout=60):
 
 def main():
     project=ROOT/'enhanced-squirrel'
+    sdk=json.loads((project/'build/evidence/clt-build-complete.json').read_text())['sdk']
     (project/'build').mkdir(exist_ok=True)
     (ROOT/'evidence').mkdir(exist_ok=True)
     signing=project/'build/local-signing'
@@ -27,9 +28,9 @@ def main():
     probe_source=ROOT/'tools/NativeIPCTrustProbe.swift'
     unsigned=stage/'unsigned'
     bins=Path(run(['swift','build','--package-path',project/'Enhancements','--build-system','native','--sdk',
-        subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip(),'--scratch-path',project/'build/swift-clt','--show-bin-path']).stdout.strip())
+        sdk,'--scratch-path',project/'build/swift-clt','--show-bin-path']).stdout.strip())
     objects=[*sorted((bins/'EnhancementCore.build').glob('*.swift.o')),*sorted((bins/'EnhancementIPC.build').glob('*.swift.o'))]
-    run(['xcrun','swiftc','-sdk',subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip(),'-parse-as-library','-I',bins/'Modules',probe_source,*objects,'-o',unsigned])
+    run(['xcrun','swiftc','-sdk',sdk,'-parse-as-library','-I',bins/'Modules',probe_source,*objects,'-o',unsigned])
     validation=json.loads(run([unsigned,'validate']).stdout)
     fingerprint=plistlib.loads((project/'build/CLT/SquirrelEnhancedDev.app/Contents/Info.plist').read_bytes())['SquirrelEnhancementCertificateSHA1']
     assert len(fingerprint)==40
