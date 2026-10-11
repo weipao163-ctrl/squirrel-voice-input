@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EFCAFE000000000000000007 /* VoiceTargetMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE000000000000000008; };
 		EFCAFE000000000000000005 /* VoiceTargetSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE000000000000000006; };
 		EFCAFE000000000000000003 /* KeyboardInputPosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE000000000000000004; };
 		EFCAFE000000000000000001 /* NativeVoiceTargetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE000000000000000002; };
@@ -233,6 +234,7 @@ EE0000000000000000000009 /* EnhancementDeployment.swift in Sources */ = {isa = P
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		EFCAFE000000000000000008 /* VoiceTargetMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTargetMonitor.swift; sourceTree = "<group>"; };
 		EFCAFE000000000000000006 /* VoiceTargetSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sources/VoiceTargetSelection.swift; sourceTree = SOURCE_ROOT; };
 		EFCAFE000000000000000004 /* KeyboardInputPosition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sources/KeyboardInputPosition.swift; sourceTree = SOURCE_ROOT; };
 		EFCAFE000000000000000002 /* NativeVoiceTargetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sources/NativeVoiceTargetSnapshot.swift; sourceTree = SOURCE_ROOT; };
@@ -361,6 +363,7 @@ EE000000000000000000000A /* EnhancementDeployment.swift */ = {isa = PBXFileRefer
 			children = (
 				B38E9B902BE9AE1E0036ABEF /* SquirrelApplicationDelegate.swift */,
 				EFCAFE000000000000000004 /* KeyboardInputPosition.swift */,
+				EFCAFE000000000000000008 /* VoiceTargetMonitor.swift */,
 				EFCAFE000000000000000006 /* VoiceTargetSelection.swift */,
 				EFCAFE000000000000000002 /* NativeVoiceTargetSnapshot.swift */,
 				B38E9B942BEAFEFD0036ABEF /* SquirrelInputController.swift */,
@@ -641,6 +644,7 @@ EE0000000000000000000009 /* EnhancementDeployment.swift in Sources */,
 				EE0000000000000000000005 /* EnhancementPreview.swift in Sources */,
 				EE0000000000000000000003 /* EnhancementTarget.swift in Sources */,
 				EFCAFE000000000000000003 /* KeyboardInputPosition.swift in Sources */,
+				EFCAFE000000000000000007 /* VoiceTargetMonitor.swift in Sources */,
 				EFCAFE000000000000000005 /* VoiceTargetSelection.swift in Sources */,
 				EFCAFE000000000000000001 /* NativeVoiceTargetSnapshot.swift in Sources */,
 				EE0000000000000000000001 /* EnhancementBridge.swift in Sources */,
