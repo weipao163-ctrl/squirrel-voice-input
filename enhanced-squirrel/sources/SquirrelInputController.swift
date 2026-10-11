@@ -870,11 +870,12 @@ extension SquirrelInputController: EnhancementInput {
       if let data=try? Wire.encode(VoiceRequest(identity:identity,revision:settings.revision,pressUptime:pressUptime)) {
         EnhancementBridge.shared.helper?.begin(data)
       }
-      voiceLease=Timer.scheduledTimer(withTimeInterval:0.5,repeats:true) { [weak self] _ in
+      voiceLease=Timer(timeInterval:0.5,repeats:true) { [weak self] _ in
         guard let self,self.voiceIdentity == identity,!self.voiceTerminal else { return }
         if let data=try? Wire.encode(identity) { EnhancementBridge.shared.helper?.lease(data) }
         if self.voiceTarget?.valid != true { self.enhancementInvalidated() }
       }
+      if let voiceLease { RunLoop.main.add(voiceLease,forMode:.common) }
     } catch {
       voiceCapturePending=false; voiceTerminal=true; physicalKeys.cancel()
       let message=(error as? EnhancementTarget.CaptureFailure)?.message ?? "当前输入框的位置检查失败；未启动采音。"
@@ -993,29 +994,38 @@ extension SquirrelInputController: EnhancementInput {
   }
   func voiceReceived(_ value:VoiceUpdate) {
     guard voiceIdentity == value.identity, !voiceTerminal else { return }
-    var display = value
-    if [.ready,.review,.failed,.cancelled].contains(value.phase) {
+    if value.phase == .ready {
       voiceLease?.invalidate(); physicalKeys.cancel()
-      if value.phase == .ready {
-        let valid = voiceReleased && !voiceAttempted && value.complete && !enhancementComposing() &&
-          voiceTarget?.matches(client:client,generation:inputGeneration) == true &&
-          !value.text.unicodeScalars.contains(where:{CharacterSet.controlCharacters.union(.newlines).contains($0)})
-        if valid, let client {
-          voiceAttempted = true // Before insertion. Do not retry an unknown native outcome.
-          // Own writes may synchronously produce AX value/selection notices.
-          // The original target is verified; retire its guard before committing.
-          voiceTarget?.invalidate()
-          // Reuse the ordinary keyboard commit, including the marked-text
-          // compatibility option required by some embedded web clients.
-          withExtendedLifetime(client) { commit(string:value.text) }
-          voiceDiagnosticReceipt(value.identity,decision:.nativeCallReturned)
-          EnhancementPreview.shared.clear(); voiceTerminal = true; voiceTarget = nil; return
-        }
-        display.phase = .review; display.message = "目标/位置无法再次证实；没有自动插入，文本仅作草稿。"
-        voiceDiagnosticReceipt(value.identity,decision:.reviewRequired)
+      guard voiceReleased, !voiceAttempted, value.complete, !enhancementComposing(), let target = voiceTarget,
+            !value.text.unicodeScalars.contains(where:{CharacterSet.controlCharacters.union(.newlines).contains($0)}) else {
+        finishVoiceDelivery(value,verified:false); return
       }
-      voiceTerminal = true; voiceTarget = nil
+      // Keep observing the original target during bounded transient IPC retries.
+      // A retained target is not insertion permission; only a fresh success is.
+      target.verifyForDelivery(client:client,generation:inputGeneration) { [weak self, weak target] verified in
+        guard let self, self.voiceIdentity == value.identity, !self.voiceTerminal else { return }
+        self.finishVoiceDelivery(value,verified:verified && target === self.voiceTarget)
+      }
+      return
     }
+    if [.review,.failed,.cancelled].contains(value.phase) {
+      voiceLease?.invalidate(); physicalKeys.cancel(); voiceTerminal = true; voiceTarget = nil
+    }
+    EnhancementPreview.shared.update(value)
+  }
+  private func finishVoiceDelivery(_ value:VoiceUpdate,verified:Bool) {
+    guard voiceIdentity == value.identity, !voiceTerminal else { return }
+    if verified, voiceReleased, !voiceAttempted, !enhancementComposing(), voiceTarget?.valid == true, let client {
+      voiceAttempted = true // Before insertion; never retry an unknown native outcome.
+      voiceTarget?.invalidate()
+      withExtendedLifetime(client) { commit(string:value.text) }
+      voiceDiagnosticReceipt(value.identity,decision:.nativeCallReturned)
+      EnhancementPreview.shared.clear(); voiceTerminal = true; voiceTarget = nil; return
+    }
+    var display = value
+    display.phase = .review; display.message = "目标/位置无法再次证实；没有自动插入，文本仅作草稿。"
+    voiceDiagnosticReceipt(value.identity,decision:.reviewRequired)
+    voiceTerminal = true; voiceTarget = nil
     EnhancementPreview.shared.update(display)
   }
   func enhancementDeploy(action:String,schema:String) {

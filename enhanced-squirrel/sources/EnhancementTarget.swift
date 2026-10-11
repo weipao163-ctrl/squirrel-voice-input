@@ -23,6 +23,11 @@ final class EnhancementTarget {
   private var nativeMonitor: Any?
   private var nativeTimer: Timer?
   private var nativeWorkspaceObservers: [NSObjectProtocol] = []
+  private lazy var monitoring = VoiceTargetMonitor(verify: { [weak self] in
+    self?.verification() ?? .changed("target-released")
+  }, invalidated: { [weak self] reason in
+    self?.mismatchReason = reason; self?.revoke()
+  })
   private(set) var valid = true
   private(set) var mismatchReason: String?
   var invalidated: (() -> Void)?
@@ -50,7 +55,7 @@ final class EnhancementTarget {
     self.client = client; self.generation = generation; self.app = app; self.source = source
     self.processID = front.processIdentifier; self.bundleID = bundleID; self.ownedKeyCodes = ownedKeyCodes
     // Outside the synchronous key callback, so the text host can service IPC.
-    AXUIElementSetMessagingTimeout(app,0.3)
+    AXUIElementSetMessagingTimeout(app,0.1)
     func focused(_ key: String) throws -> AXUIElement? {
       var value: CFTypeRef?
       let status = AXUIElementCopyAttributeValue(app,key as CFString,&value)
@@ -62,8 +67,8 @@ final class EnhancementTarget {
     }
     let element = try focused(kAXFocusedUIElementAttribute)
     let window = try focused(kAXFocusedWindowAttribute)
-    if let element { AXUIElementSetMessagingTimeout(element,0.3) }
-    if let window { AXUIElementSetMessagingTimeout(window,0.3) }
+    if let element { AXUIElementSetMessagingTimeout(element,0.1) }
+    if let window { AXUIElementSetMessagingTimeout(window,0.1) }
     guard Self.safe(element) else { throw CaptureFailure.unsupportedRole }
     let axRange = element.flatMap(Self.selectedRange)
     let frame = window.flatMap(NativeVoiceTargetSnapshot.accessibilityWindowFrame)
@@ -76,10 +81,10 @@ final class EnhancementTarget {
     self.native = snapshot; self.windowFrame = frame
     try startNativeMonitoring()
   }
-  func invalidate() { valid = false }
+  func invalidate() { valid = false; monitoring.invalidate() }
   private func revoke() {
     guard valid else { return }
-    valid = false; invalidated?()
+    valid = false; monitoring.invalidate(); invalidated?()
   }
   private static func safe(_ element: AXUIElement?) -> Bool {
     guard let element else { return true }
@@ -93,19 +98,23 @@ final class EnhancementTarget {
       attribute(kAXEnabledAttribute) as? Bool != false
   }
   private func startNativeMonitoring() throws {
-    // A client proxy can be reused between fields. Revoke on any click, scroll,
-    // ordinary key press, activation, session/space or screen change, even if
-    // it subsequently returns to the same coordinates and range.
+    // A client proxy can be reused between fields. Clicks and ordinary key
+    // presses revoke even if the caret later returns to its original position.
+    // Scroll/AX/workspace hints verify actual ownership; idle redraws or an
+    // unrelated background activation must not synthesize a physical release.
     nativeMonitor=NSEvent.addGlobalMonitorForEvents(matching:[.leftMouseDown,.rightMouseDown,.otherMouseDown,.scrollWheel,.keyDown]) { [weak self] event in
       guard let self else { return }
       if event.type == .keyDown && (event.isARepeat || self.ownedKeyCodes.contains(event.keyCode)) { return }
-      self.revoke()
+      if event.type == .scrollWheel { self.monitoring.scheduleInspection() }
+      else { self.revoke() }
     }
     guard nativeMonitor != nil else { throw CaptureFailure.observerUnavailable }
     var extra:AXObserver?
-    if AXObserverCreate(processID,{ _,_,_,refcon in
+    if AXObserverCreate(processID,{ _,_,notice,refcon in
       guard let refcon else { return }
-      Unmanaged<EnhancementTarget>.fromOpaque(refcon).takeUnretainedValue().revoke()
+      let target = Unmanaged<EnhancementTarget>.fromOpaque(refcon).takeUnretainedValue()
+      if notice as String == kAXUIElementDestroyedNotification { target.revoke() }
+      else { target.monitoring.scheduleInspection() }
     },&extra) == .success,let extra {
       let refcon=Unmanaged.passUnretained(self).toOpaque()
       for notice in [kAXFocusedUIElementChangedNotification,kAXFocusedWindowChangedNotification] {
@@ -124,11 +133,15 @@ final class EnhancementTarget {
     for notice in [NSWorkspace.didActivateApplicationNotification,NSWorkspace.didDeactivateApplicationNotification,
         NSWorkspace.sessionDidResignActiveNotification,NSWorkspace.activeSpaceDidChangeNotification,
         NSWorkspace.willSleepNotification] {
-      nativeWorkspaceObservers.append(center.addObserver(forName:notice,object:nil,queue:.main) { [weak self] _ in self?.revoke() })
+      nativeWorkspaceObservers.append(center.addObserver(forName:notice,object:nil,queue:.main) { [weak self] _ in
+        if notice == NSWorkspace.didActivateApplicationNotification || notice == NSWorkspace.didDeactivateApplicationNotification {
+          self?.monitoring.scheduleInspection()
+        } else { self?.revoke() }
+      })
     }
     let timer=Timer(timeInterval:0.2,repeats:true) { [weak self] _ in
       guard let self,self.valid else { return }
-      if !self.matches(client:self.client,generation:self.generation) { self.revoke() }
+      self.monitoring.inspect()
     }
     nativeTimer=timer
     RunLoop.main.add(timer,forMode:.common)
@@ -136,40 +149,60 @@ final class EnhancementTarget {
   var verificationDescription: String { "原生键盘输入会话" }
   func previewAnchor() -> NSRect? { native.caret }
   func matches(client: IMKTextInput?, generation: UInt64) -> Bool {
+    guard valid, self.generation == generation, let client, self.client === client else { return false }
+    return monitoring.inspect()
+  }
+  func verifyForDelivery(client: IMKTextInput?, generation: UInt64, completion: @escaping (Bool) -> Void) {
+    guard valid, self.generation == generation, let client, self.client === client else { completion(false); return }
+    monitoring.verifyForDelivery { [weak self] verified in completion(verified && self?.valid == true) }
+  }
+  private func verification() -> VoiceTargetMonitor.Verification {
     mismatchReason = nil
-    func fail(_ reason: String) -> Bool { mismatchReason = reason; return false }
-    guard valid,self.generation == generation,let client,self.client === client,
-          let front = NSWorkspace.shared.frontmostApplication,
+    func changed(_ reason: String) -> VoiceTargetMonitor.Verification { mismatchReason = reason; return .changed(reason) }
+    func unavailable(_ reason: String) -> VoiceTargetMonitor.Verification { mismatchReason = reason; return .unavailable(reason) }
+    guard valid, let front = NSWorkspace.shared.frontmostApplication,
           VoiceTargetEligibility.currentlyEligible(expectedPID:processID,expectedBundle:bundleID,
             currentPID:front.processIdentifier,currentBundle:front.bundleIdentifier,clientBundle:client.bundleIdentifier(),
             trusted:AXIsProcessTrusted(),secureInput:IsSecureEventInputEnabled(),subrole:nil,enabled:nil),
-          SquirrelInstaller.currentInputSourceID() == source else { return fail("input-session-or-security-changed") }
-    var metadataValid = true
-    func current(_ key: String) -> AXUIElement? {
+          SquirrelInstaller.currentInputSourceID() == source else { return changed("input-session-or-security-changed") }
+    func current(_ key: String) -> (AXUIElement?, AXError) {
       var value: CFTypeRef?
       let status = AXUIElementCopyAttributeValue(app,key as CFString,&value)
-      if !NativeVoiceTargetSnapshot.allowsMissingMetadata(status) { metadataValid = false }
-      guard status == .success,let value,CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-      return unsafeBitCast(value,to:AXUIElement.self)
+      guard status == .success,let value,CFGetTypeID(value) == AXUIElementGetTypeID() else { return (nil,status) }
+      return (unsafeBitCast(value,to:AXUIElement.self),status)
     }
-    let focused = current(kAXFocusedUIElementAttribute)
-    let focusedWindow = current(kAXFocusedWindowAttribute)
+    let (focused,focusStatus) = current(kAXFocusedUIElementAttribute)
+    if !NativeVoiceTargetSnapshot.allowsMissingMetadata(focusStatus) { return changed("ax-security-or-permission-changed") }
+    if focusStatus == .cannotComplete { return unavailable("ax-input-temporarily-unavailable") }
+    let (focusedWindow,windowStatus) = current(kAXFocusedWindowAttribute)
+    if !NativeVoiceTargetSnapshot.allowsMissingMetadata(windowStatus) { return changed("ax-security-or-permission-changed") }
+    if windowStatus == .cannotComplete { return unavailable("ax-window-temporarily-unavailable") }
     if let element {
-      guard let focused,CFEqual(focused,element) else { return fail("ax-input-identity-changed") }
-      guard Self.selectedRange(element) == accessibilitySelection else { return fail("ax-selection-changed") }
+      guard let focused else { return unavailable("ax-input-temporarily-unavailable") }
+      guard CFEqual(focused,element) else { return changed("ax-input-identity-changed") }
+      let selection = Self.selectedRange(element)
+      if accessibilitySelection != nil && selection == nil { return unavailable("ax-selection-temporarily-unavailable") }
+      guard selection == accessibilitySelection else { return changed("ax-selection-changed") }
     }
-    if let window { guard let focusedWindow,CFEqual(focusedWindow,window) else { return fail("ax-window-identity-changed") } }
-    guard metadataValid,Self.safe(focused) else { return fail("ax-security-or-permission-changed") }
+    if let window {
+      guard let focusedWindow else { return unavailable("ax-window-temporarily-unavailable") }
+      guard CFEqual(focusedWindow,window) else { return changed("ax-window-identity-changed") }
+    }
+    guard Self.safe(focused) else { return changed("ax-security-or-permission-changed") }
     let frame = focusedWindow.flatMap(NativeVoiceTargetSnapshot.accessibilityWindowFrame)
-    // Retain all evidence captured at press: losing AX window geometry cannot
-    // silently relax the guard to a different CG window or input control.
-    if let windowFrame { guard frame == windowFrame else { return fail("ax-window-frame-changed") } }
+    if let windowFrame {
+      guard let frame else { return unavailable("ax-window-frame-temporarily-unavailable") }
+      guard frame == windowFrame else { return changed("ax-window-frame-changed") }
+    }
     if let reason = native.mismatch(client:client,accessibilitySelection:accessibilitySelection,
       hasAccessibilityIdentity:element != nil && window != nil,windowAt: {
         NativeVoiceTargetSnapshot.frontWindow(processID:self.processID,caret:$0,
           verifiedFrame:self.windowFrame,windowLevel:client.windowLevel())
-      }) { return fail(reason) }
-    return true
+      }) {
+      if reason == "native-position-unavailable" { return unavailable(reason) }
+      return changed(reason)
+    }
+    return .verified
   }
   private static func selectedRange(_ element:AXUIElement) -> NSRange? {
     var value:CFTypeRef?
