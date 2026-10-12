@@ -43,6 +43,10 @@ local function property(ctx, name, value)
   if ctx:get_property(name) ~= value then ctx:set_property(name, value) end
 end
 
+local function literal_text(env)
+  return (env.literal_prefix or "") .. env.engine.context.input:sub((env.literal_start or 0) + 1)
+end
+
 local function publish(env)
   local ctx = env.engine.context
   local active = eligible(env)
@@ -59,6 +63,7 @@ local function publish(env)
   end
   local hide = env.original_hide
   if active then hide = not env.armed and env.hide_candidates end
+  if env.literal then hide = true end
   hide = env.external_hide or hide
   if ctx:get_option("_hide_candidate") ~= hide then
     env.writing_hide = true
@@ -66,7 +71,10 @@ local function publish(env)
     env.writing_hide = false
   end
   property(ctx, KEYS, active and env.keys or "")
-  property(ctx, PHASE, active and (env.armed and "selecting" or "editing") or "off")
+  property(ctx, PHASE, env.literal and "literal" or (active and (env.armed and "selecting" or "editing") or "off"))
+  property(ctx, "_letter_selection_literal_text", env.literal and literal_text(env) or "")
+  property(ctx, "_letter_selection_literal_caret", env.literal and
+    tostring(#(env.literal_prefix or "") + math.max(0, ctx.caret_pos - (env.literal_start or 0))) or "")
   property(ctx, "_letter_selection_hide_editing", active and env.hide_candidates and "true" or "false")
 end
 
@@ -95,11 +103,52 @@ end
 
 local function synchronize(env)
   local ctx, seg = env.engine.context, segment(env.engine.context)
+  if env.literal and (ctx.input == "" or not enabled(env) or ctx:get_option("ascii_mode") or
+      not ctx.input:sub((env.literal_start or 0) + 1):find("%d")) then env.literal = false end
   if env.armed and (not eligible(env) or ctx.input ~= env.input or
       (seg and seg.start == env.start and ctx.caret_pos ~= env.caret)) then
     env.armed = false
   end
   publish(env)
+end
+
+local function can_input_digit(env)
+  local ctx, seg = env.engine.context, segment(env.engine.context)
+  if not enabled(env) or ctx:get_option("ascii_mode") or not seg or ctx.input == "" then return false end
+  if not ctx.input:match("^[a-zA-Z0-9']+$") or not (seg:has_tag(env.tag) or seg:has_tag("raw")) then return false end
+  local input = ctx.input:sub(seg.start + 1)
+  if env.passthrough[input] then return false end
+  for _, pattern in ipairs(env.patterns) do if input:match(pattern) then return false end end
+  local candidate = ctx:get_selected_candidate()
+  return not candidate or not env.excluded[candidate.type]
+end
+
+local function begin_literal(env)
+  local ctx = env.engine.context
+  env.literal, env.armed, env.literal_start, env.literal_prefix = true, false, 0, ""
+  -- Keep only segments explicitly chosen by the user, never guessed candidates.
+  for _, seg in ipairs(ctx.composition:toSegmentation():get_segments()) do
+    if seg.status ~= "kSelected" and seg.status ~= "kConfirmed" then break end
+    local candidate = seg:get_selected_candidate()
+    env.literal_prefix = env.literal_prefix .. (candidate and candidate.text or ctx.input:sub(seg.start + 1, seg._end))
+    env.literal_start = candidate and candidate._end or seg._end
+  end
+end
+
+local function commit_literal(env, suffix)
+  local ctx = env.engine.context
+  local raw = ctx.input:sub(env.literal_start + 1) .. (suffix or "")
+  local prefix, prefix_input = env.literal_prefix, ctx.input:sub(1, env.literal_start)
+  env.literal = false
+  if prefix_input ~= "" then
+    ctx.input = prefix_input
+    if ctx:get_commit_text() == prefix then ctx:commit()
+    else ctx:clear(); env.engine:commit_text(prefix) end
+  else ctx:clear() end
+  -- This is literal ASCII input, not candidate.text selection. Normal Chinese
+  -- and any already-confirmed prefix keep the engine's selection/learning path.
+  env.engine:commit_text(raw)
+  disarm(env)
 end
 
 function M.init(env)
@@ -180,11 +229,11 @@ function M.init(env)
     (bridge_required and "schema_select_keys_setter_unavailable" or "invalid_keys_or_patterns"))
   property(ctx, "_letter_selection_label_backend", env.can_set_keys and "schema_select_keys" or "unavailable")
   property(ctx, "_letter_selection_lua_version", _VERSION)
-  env.armed, env.connections = false, {}
+  env.armed, env.literal, env.connections = false, false, {}
   env.connections[#env.connections + 1] = ctx.update_notifier:connect(function() synchronize(env) end)
   env.connections[#env.connections + 1] = ctx.select_notifier:connect(function()
     -- Engine's OnSelect has already advanced/committed the segment. Keep the native
-    -- selection/learning path, and re-arm the remaining input for mouse and numbers too.
+    -- selection/learning path, and re-arm remaining input after letters or mouse.
     if env.armed then arm(env) else synchronize(env) end
   end)
   env.connections[#env.connections + 1] = ctx.commit_notifier:connect(function() disarm(env) end)
@@ -228,10 +277,46 @@ end
 function M.func(key, env)
   local ctx = env.engine.context
   synchronize(env)
-  if not eligible(env) or key:release() then return NOOP end
+  if key:release() then return NOOP end
   -- A shortcut is never a letter selection, even when its keycode is a letter.
   if key:ctrl() or key:alt() or key:super() then return NOOP end
   local repr = key:repr()
+  local digit = key.keycode >= 48 and key.keycode <= 57 and not key:shift()
+  if not digit and key.keycode >= 0xffb0 and key.keycode <= 0xffb9 then digit = true end
+  if digit and (env.literal or can_input_digit(env)) then
+    if not env.literal then begin_literal(env) end
+    ctx:push_input(string.char(key.keycode >= 0xffb0 and key.keycode - 0xffb0 + 48 or key.keycode))
+    snapshot(env); publish(env)
+    return ACCEPTED -- ordinary typing: do not suppress held-number repeats
+  end
+  if env.literal then
+    local code = key.keycode
+    if code >= 65 and code <= 90 or code >= 97 and code <= 122 or code == 95 or code == 45 then
+      local text = string.char(code)
+      if key:shift() then text = text:upper() end
+      ctx:push_input(text); snapshot(env); publish(env); return ACCEPTED
+    end
+    if repr == "BackSpace" and ctx.caret_pos > env.literal_start then
+      ctx:pop_input(1); snapshot(env); publish(env); return ACCEPTED
+    end
+    if repr == "Delete" then ctx:delete_input(); snapshot(env); publish(env); return ACCEPTED end
+    if repr == "Left" or repr == "Right" or repr == "Home" or repr == "End" then
+      local caret = ctx.caret_pos
+      if repr == "Left" then caret = math.max(env.literal_start, caret - 1) end
+      if repr == "Right" then caret = math.min(#ctx.input, caret + 1) end
+      if repr == "Home" then caret = env.literal_start end
+      if repr == "End" then caret = #ctx.input end
+      ctx.caret_pos = caret; snapshot(env); publish(env); return ACCEPTED
+    end
+    if repr == "Escape" then ctx:clear(); disarm(env); return ACCEPTED end
+    if repr == "Return" or repr == "KP_Enter" then commit_literal(env); return ACCEPTED end
+    if repr == "space" then commit_literal(env, " "); return ACCEPTED end
+    if code >= 32 and code <= 126 or repr == "Tab" then
+      commit_literal(env); return NOOP -- delimiter handled once by original path
+    end
+    return NOOP
+  end
+  if not eligible(env) then return NOOP end
   if key:shift() or repr == "Caps_Lock" or repr == "Shift_L" or repr == "Shift_R" then
     disarm(env); return NOOP
   end
@@ -254,7 +339,6 @@ function M.func(key, env)
   end
   if env.armed then
     local index = env.indices[repr]
-    if repr:match("^[1-9]$") then index = tonumber(repr) - 1 end
     if index ~= nil then
       local seg, size = segment(ctx), env.engine.schema.page_size
       if seg and index < size then
@@ -275,13 +359,15 @@ end
 
 function M.fini(env)
   for _, connection in ipairs(env.connections or {}) do connection:disconnect() end
-  env.armed = false
+  env.armed, env.literal = false, false
   if env.can_set_keys and env.engine.schema.select_keys == env.last_select_keys then
     env.engine.schema.select_keys = env.original_select_keys
   end
   env.engine.context:set_option("_hide_candidate", env.external_hide or env.original_hide)
   property(env.engine.context, PHASE, "off")
   property(env.engine.context, KEYS, "")
+  property(env.engine.context, "_letter_selection_literal_text", "")
+  property(env.engine.context, "_letter_selection_literal_caret", "")
 end
 
 return M
