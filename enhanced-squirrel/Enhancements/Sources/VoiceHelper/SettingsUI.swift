@@ -324,7 +324,7 @@ struct SettingsView: View {
               var value = profile.wrappedValue; value.keys = LetterProfile().keys; value.pageSize = 9; value.useDefaultAppearance = true; value.appearance = CandidateAppearance(); profile.wrappedValue = value
             }
             Text("新方案默认使用输入法外观。自定义外观和选词字母从下一次输入生效，无需重新部署；页大小和处理器仍需部署。").font(.caption)
-            Text("首次空格仅进入选词；第二次空格确认高亮。字母/数字对应当前页，Esc 保留拼音，退格交回原方案一次。修改 processors/页大小需要保存后确认部署。")
+            Text("首次空格仅进入选词；第二次空格确认高亮。仅字母选择当前页候选；数字按原文输入，中英数字混合保持原样。Esc 保留拼音，退格交回原方案一次。修改 processors/页大小需要保存后确认部署。")
             HStack {
               Button("确认应用并重新部署…") { deployConfirm = true }
               Button("真实隔离 Rime 测试") { model.deployLetters(test:true) }
