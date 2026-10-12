@@ -53,7 +53,7 @@ def main():
     home_rejection=command(['/bin/bash',scripts/'pkg-user-install.sh',scripts/app.name,'/not-the-user-home'],check=False)
     assert home_rejection['exit_code']==2
     identifier='org.rime.SquirrelEnhanced.Development.Installer'
-    version='0.1.20261011.1'
+    version='0.1.20261012.1'
     component=stage/'SquirrelVoiceInput.component.pkg'
     # Script-only package avoids Installer overwriting a live input method. The
     # signed app is inside Scripts and installed atomically by the shared tested
