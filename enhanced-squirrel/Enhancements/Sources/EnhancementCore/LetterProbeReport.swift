@@ -13,7 +13,7 @@ public struct LetterProbeReport: Codable, Equatable, Sendable {
     "pinyin_and_first_space", "alphabet_is_pinyin_before_selection",
     "selection_letters_current_page", "second_space_confirms_highlight",
     "second_page_letter", "last_page_missing_item", "escape_retains_input",
-    "backspace_exactly_once", "numeric_current_page", "mouse_current_page_API",
+    "backspace_exactly_once", "digits_are_literal", "mouse_current_page_API",
     "sentence_partial_selection", "ASCII_and_shortcut_passthrough",
     "disable_restores_original_labels", "independent_session_cleanup"
   ]
