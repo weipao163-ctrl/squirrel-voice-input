@@ -40,6 +40,7 @@ function make_env(options)
   ctx.composition = {}
   function ctx.composition:empty() return ctx.input == "" end
   function ctx.composition:back() return ctx.input ~= "" and seg or nil end
+  function ctx.composition:toSegmentation() return {get_segments=function() return {} end} end
   for _, name in ipairs({"update", "select", "commit", "option_update", "property_update"}) do
     ctx[name .. "_notifier"] = notifier()
   end
@@ -86,6 +87,22 @@ function make_env(options)
     self.input, self.caret_pos = text, #text
     self.update_notifier:emit(self)
   end
+  function ctx:push_input(text)
+    self.push_calls = self.push_calls + 1
+    self.input = self.input:sub(1,self.caret_pos) .. text .. self.input:sub(self.caret_pos+1)
+    self.caret_pos = self.caret_pos + #text
+    self.update_notifier:emit(self)
+  end
+  function ctx:pop_input(count)
+    local pos = self.caret_pos
+    self.input = self.input:sub(1,pos-count) .. self.input:sub(pos+1)
+    self.caret_pos = pos-count
+    self.update_notifier:emit(self)
+  end
+  function ctx:delete_input()
+    self.input = self.input:sub(1,self.caret_pos) .. self.input:sub(self.caret_pos+2)
+    self.update_notifier:emit(self)
+  end
   local config = {values=options.config or {}}
   function config:get_string(path)
     local v = self.values[path]
@@ -101,6 +118,8 @@ function make_env(options)
     if type(values) ~= "table" then return nil end
     return {size=#values, get_value_at=function(_, i) return {value=values[i+1]} end}
   end
-  return {engine={context=ctx, schema={config=config, page_size=options.page_size or 9,
-    select_keys=options.select_keys or ""}}}
+  local engine={context=ctx, schema={config=config, page_size=options.page_size or 9,
+    select_keys=options.select_keys or ""}}
+  function engine:commit_text(text) ctx.commits[#ctx.commits+1] = text end
+  return {engine=engine}
 end

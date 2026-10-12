@@ -226,11 +226,9 @@ def main():
             handled, absent = h.key("l")
             assert handled and not absent["commit"] and absent["input"] == "ni", absent
             assert absent["candidates"] == last["candidates"] and absent["highlighted"] == last["highlighted"], absent
-            handled, absent = h.key("9")
-            assert handled and not absent["commit"] and absent["input"] == "ni", absent
             _, state = h.key("a")
             assert state["commit"] == last["candidates"][0], state
-        case("last_page_missing_letters_and_numbers_consumed", last_page)
+        case("last_page_missing_letters_consumed", last_page)
 
         def cancel_backspace():
             h.start()
@@ -272,30 +270,26 @@ def main():
             assert commits.startswith("你") and not state["input"] and state["phase"] == "off", state
         case("sentence_partial_selection_retains_and_finishes_remainder", segmented)
 
-        def digits_mouse():
-            for method in ["number", "mouse_API"]:
-                h.start()
-                h.type("ni")
-                h.key("space")
-                r.change_page(h.sid, 0)
-                opened = h.state()
-                expected = opened["candidates"][2]
-                if method == "number":
-                    _, selected = h.key("3")
-                else:
-                    assert r.select_candidate_on_current_page(h.sid, 2)
-                    selected = h.state()
-                assert selected["commit"] == expected and not selected["input"], selected
-        case("numbers_and_Squirrel_mouse_selection_API", digits_mouse)
+        def mouse():
+            h.start(); h.type("ni"); h.key("space"); r.change_page(h.sid,0)
+            opened=h.state(); expected=opened["candidates"][2]
+            assert r.select_candidate_on_current_page(h.sid,2)
+            selected=h.state()
+            assert selected["commit"]==expected and not selected["input"], selected
+        case("Squirrel_mouse_selection_API",mouse)
 
         def all_digits():
-            for index in range(9):
-                h.start()
-                h.type("ni")
-                _, opened = h.key("space")
-                _, state = h.key(str(index + 1))
-                assert state["commit"] == opened["candidates"][index] and not state["input"], state
-        case("all_nine_number_keys_preserved", all_digits)
+            for showing in (False,True):
+                for digit in "0123456789":
+                    h.start(); h.type("ni")
+                    if showing: h.key("space")
+                    handled,state=h.key(digit)
+                    assert handled and not state["commit"] and state["input"]=="ni"+digit, state
+            for text in ("lovewin2k","abc123def456","win0x64"):
+                h.start(); state=h.type(text)
+                _,state=h.key("Return")
+                assert state["commit"]==text and not state["input"], state
+        case("all_ten_digits_are_literal_and_mixed_words_remain_verbatim",all_digits)
 
         def ascii_shortcut():
             h.start()

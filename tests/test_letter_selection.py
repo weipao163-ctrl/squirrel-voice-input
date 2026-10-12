@@ -97,7 +97,7 @@ class LuaTests(unittest.TestCase):
         self.key("space")
         self.ctx.seg.selected_index = 18
         self.ctx.candidate_count = 20
-        for letter in "dfghjkl3456789":
+        for letter in "dfghjkl":
             self.assertEqual(1, self.key(letter))
             self.assertEqual(0, len(self.ctx.selected))
             self.assertEqual("ni", self.ctx.input)
@@ -121,10 +121,49 @@ class LuaTests(unittest.TestCase):
         self.ctx.select(self.ctx, 2)
         self.assertEqual("selecting", self.phase())
 
-    def test_digits_select(self):
-        self.key("space")
-        self.key("3")
-        self.assertEqual(2, self.ctx.selected[1])
+    def test_digits_are_literal_in_editing_and_selecting(self):
+        for armed in (False, True):
+            for digit in "0123456789":
+                self.make()
+                if armed: self.key("space")
+                marker = self.ctx.get_property(self.ctx,"_letter_selection_consumed")
+                self.assertEqual(1,self.key(digit))
+                self.assertEqual("ni"+digit,self.ctx.input)
+                self.assertEqual("literal",self.phase())
+                self.assertEqual(0,self.ctx.select_calls)
+                self.assertEqual(0,len(self.ctx.commits))
+                self.assertEqual(marker,self.ctx.get_property(self.ctx,"_letter_selection_consumed"))
+
+    def test_mixed_literal_preserves_following_letters_and_commits_once(self):
+        self.make(input="lovewin",caret=7)
+        for key in "2k": self.assertEqual(1,self.key(key))
+        self.assertEqual("lovewin2k",self.ctx.input)
+        self.assertEqual("lovewin2k",self.ctx.get_property(self.ctx,"_letter_selection_literal_text"))
+        self.assertEqual(1,self.key("Return"))
+        self.assertEqual("lovewin2k",self.ctx.commits[1])
+        self.assertEqual(1,len(self.ctx.commits))
+        self.assertEqual("",self.ctx.input)
+
+    def test_digit_releases_shortcuts_and_disabled_keep_original_path(self):
+        for mask in ["ctrl","alt","super","release"]:
+            self.make(); self.key("space")
+            self.assertEqual(2,self.key("2",**{mask:True}))
+            self.assertEqual("ni",self.ctx.input)
+        self.make(config={"letter_selection/enabled":False})
+        self.assertEqual(2,self.key("2"))
+
+    def test_digits_do_not_intercept_special_input_modes(self):
+        for config in [{"letter_selection/passthrough_patterns":["^n"]},
+                       {"letter_selection/passthrough_inputs":["ni"]},
+                       {"letter_selection/excluded_candidate_types":["phrase"]}]:
+            self.make(config=config)
+            self.assertEqual(2,self.key("2")); self.assertEqual("ni",self.ctx.input)
+
+    def test_backspace_removes_digit_and_restores_pinyin(self):
+        self.key("2"); self.assertEqual("literal",self.phase())
+        self.assertEqual(1,self.key("BackSpace"))
+        self.assertEqual("ni",self.ctx.input); self.assertEqual("editing",self.phase())
+        self.key("space"); self.assertEqual("selecting",self.phase())
 
     def test_escape_consumed_preserves_input(self):
         self.key("space")
