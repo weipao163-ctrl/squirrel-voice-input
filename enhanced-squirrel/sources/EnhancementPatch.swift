@@ -1,7 +1,38 @@
 import Foundation
+import CryptoKit
 import EnhancementCore
 
 enum EnhancementPatch {
+  private static let previousLuaSHA256 = "e6eeb8def9e9c96f9ff143c46c5eacc942fef0c38dfae718da0ee10a0db4694c"
+  static func upgradeBundledLua(directory:URL) throws {
+    let fm = FileManager.default
+    let lua = directory.appendingPathComponent("lua/letter_selection.lua")
+    guard fm.fileExists(atPath:lua.path) else { return }
+    guard lua.standardizedFileURL == lua.resolvingSymlinksInPath().standardizedFileURL else {
+      throw SettingsError.invalid("选词脚本路径是符号链接；未覆盖。")
+    }
+    guard let bundled = Bundle.main.url(forResource:"letter_selection",withExtension:"lua") else {
+      throw SettingsError.invalid("安装包缺少选词脚本。")
+    }
+    let current = try readBounded(lua,limit:256 * 1024)
+    let replacement = try readBounded(bundled,limit:256 * 1024)
+    guard current != replacement else { return }
+    let digest = SHA256.hash(data:current).map { String(format:"%02x",$0) }.joined()
+    guard digest == previousLuaSHA256 else {
+      throw SettingsError.invalid("选词脚本已有自行修改；保留原文件，没有自动升级。")
+    }
+    let backup = lua.appendingPathExtension("before-0.1.25")
+    guard (try? backup.resourceValues(forKeys:[.isSymbolicLinkKey]).isSymbolicLink) != true else {
+      throw SettingsError.invalid("选词脚本备份是符号链接；保留原文件。")
+    }
+    if fm.fileExists(atPath:backup.path) {
+      guard backup.standardizedFileURL == backup.resolvingSymlinksInPath().standardizedFileURL,
+            try readBounded(backup,limit:256 * 1024) == current else {
+        throw SettingsError.invalid("选词脚本备份冲突；保留原文件。")
+      }
+    } else { try current.write(to:backup,options:.atomic) }
+    try replacement.write(to:lua,options:.atomic)
+  }
   static let begin = "  # BEGIN SquirrelEnhanced owned patch v1"
   static let end = "  # END SquirrelEnhanced owned patch v1"
   static func apply(schema:String,profile:LetterProfile,directory:URL,replaceLegacy:Bool = false) throws -> ManagedLetterPatch.Plan {
@@ -50,9 +81,10 @@ enum EnhancementPatch {
       throw SettingsError.invalid("Lua 文件是符号链接；未覆盖。")
     }
     if profile.enabled {
+      try upgradeBundledLua(directory:directory)
       guard let bundled = Bundle.main.url(forResource:"letter_selection",withExtension:"lua") else { throw SettingsError.invalid("安装包缺少 Lua 资源。") }
       let data = try Data(contentsOf:bundled)
-      if fm.fileExists(atPath:destination.path), try readBounded(destination,limit:data.count) != data { throw SettingsError.invalid("现有同名 Lua 不属于本安装包；未覆盖。") }
+      if fm.fileExists(atPath:destination.path), try readBounded(destination,limit:256 * 1024) != data { throw SettingsError.invalid("现有同名 Lua 不属于本安装包；未覆盖。") }
       try data.write(to:destination,options:.atomic)
     }
     // Preserve unrelated later edits. Never restore a full old custom over current data.

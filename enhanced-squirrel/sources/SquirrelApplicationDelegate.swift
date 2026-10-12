@@ -142,6 +142,8 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
       exit(EXIT_FAILURE)
     }
     createDirIfNotExist(path: SquirrelApp.userDir)
+    do { try EnhancementPatch.upgradeBundledLua(directory:SquirrelApp.userDir) }
+    catch { print("Owned letter-script upgrade deferred: \(error.localizedDescription)") }
     createDirIfNotExist(path: SquirrelApp.logDir)
     // Expose the log directory to librime plugins.
     setenv("RIME_LOG_DIR", SquirrelApp.logDir.path, 1)

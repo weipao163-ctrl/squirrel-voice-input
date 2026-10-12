@@ -561,13 +561,20 @@ private extension SquirrelInputController {
 
     var ctx = RimeContext_stdbool.rimeStructInit()
     if rimeAPI.get_context(session, &ctx) {
-      let preedit = ctx.composition.preedit.map({ String(cString: $0) }) ?? ""
+      let literal = enhancementProperty("_letter_selection_phase") == "literal"
+      let preedit = literal ? enhancementProperty("_letter_selection_literal_text") : (ctx.composition.preedit.map({ String(cString: $0) }) ?? "")
+      if literal {
+        let byteCaret = min(preedit.utf8.count, max(0, Int(enhancementProperty("_letter_selection_literal_caret")) ?? preedit.utf8.count))
+        ctx.composition.sel_start = Int32(byteCaret)
+        ctx.composition.sel_end = Int32(byteCaret)
+        ctx.composition.cursor_pos = Int32(byteCaret)
+      }
 
       let start = String.Index(preedit.utf8.index(preedit.utf8.startIndex, offsetBy: Int(ctx.composition.sel_start)), within: preedit) ?? preedit.startIndex
       let end = String.Index(preedit.utf8.index(preedit.utf8.startIndex, offsetBy: Int(ctx.composition.sel_end)), within: preedit) ?? preedit.startIndex
       let caretPos = String.Index(preedit.utf8.index(preedit.utf8.startIndex, offsetBy: Int(ctx.composition.cursor_pos)), within: preedit) ?? preedit.startIndex
 
-      let hideInlineCandidate = enhancementProperty("_letter_selection_phase") == "editing" && enhancementProperty("_letter_selection_hide_editing") == "true"
+      let hideInlineCandidate = literal || (enhancementProperty("_letter_selection_phase") == "editing" && enhancementProperty("_letter_selection_hide_editing") == "true")
       if inlineCandidate && !hideInlineCandidate {
         var candidatePreview = ctx.commit_text_preview.map { String(cString: $0) } ?? ""
         let endOfCandidatePreview = candidatePreview.endIndex
