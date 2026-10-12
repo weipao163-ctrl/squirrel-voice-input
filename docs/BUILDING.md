@@ -47,6 +47,8 @@ python3 tests/test_app_update_preparation.py
 .venv/bin/python tests/test_app_install_transaction.py --bash /bin/bash
 # 完整 Xcode 的 Core XCTest
 swift test --package-path enhanced-squirrel/Enhancements
+# 已安装增强版时，数字回归只使用新建隔离数据，不修改现用词库
+python3 tools/run_digit_input_regression.py
 # 只有 CLT 时，使用 Swift Testing 运行同一组 Core 测试体
 python3 tools/run_macos_core.py
 # 离线原生目标快照夹具：不采音、不联网
