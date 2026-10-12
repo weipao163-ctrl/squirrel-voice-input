@@ -74,8 +74,8 @@ from pathlib import Path
 app,root=map(Path,sys.argv[1:])
 info=plistlib.loads((root/'resources/Info.plist').read_bytes())
 info.update(CFBundleIdentifier='org.rime.inputmethod.SquirrelEnhanced.Development',
-            CFBundleExecutable='SquirrelEnhancedDev',CFBundleVersion='0.1.24',
-            CFBundleShortVersionString='0.1.24',CFBundleSupportedPlatforms=['MacOSX'],
+            CFBundleExecutable='SquirrelEnhancedDev',CFBundleVersion='0.1.25',
+            CFBundleShortVersionString='0.1.25',CFBundleSupportedPlatforms=['MacOSX'],
             LSMinimumSystemVersion='13.0',SquirrelEnhancementTeamID='',SquirrelEnhancementCertificateSHA1=os.environ['local_certificate_sha1'])
 # Team ID is never fabricated; local trust is an exact certificate pin.
 icon=root/'build/runtime-icon.icns'
@@ -88,7 +88,7 @@ else:
 helper={'CFBundleIdentifier':'org.rime.SquirrelEnhanced.Development.VoiceHelper',
  'CFBundleExecutable':'SquirrelVoiceHelper','CFBundleName':'鼠须管增强设置开发版',
  'CFBundleDisplayName':'鼠须管增强设置开发版','LSUIElement':True,
- 'CFBundlePackageType':'APPL','CFBundleVersion':'0.1.24','CFBundleShortVersionString':'0.1.24',
+ 'CFBundlePackageType':'APPL','CFBundleVersion':'0.1.25','CFBundleShortVersionString':'0.1.25',
  'LSMinimumSystemVersion':'13.0','SquirrelEnhancementTeamID':'',
  'SquirrelEnhancementCertificateSHA1':os.environ['local_certificate_sha1'],
  'NSMicrophoneUsageDescription':'仅在明确按住说话或主动测试时采集；云识别会向您选择并配置的语音服务发送音频。'}
