@@ -35,6 +35,7 @@ mkdir -p "$app/Contents/Resources/Licenses"
 cp resources/Quick5/LICENSE "$app/Contents/Resources/Licenses/rime-quick-LGPL-3.0.txt"
 cp resources/Quick5/GPL-3.0.txt resources/Quick5/AUTHORS resources/Quick5/UPSTREAM.json "$app/Contents/Resources/Licenses/"
 python3 "$root/../tools/bundle_public_pinyin.py" "$app"
+python3 "$root/../tools/bundle_default_letters.py" "$app"
 python3 "$root/../tools/prebuild_public_pinyin.py" "$app"
 helper="$app/Contents/Resources/SquirrelVoiceHelper.app"
 mkdir -p "$helper/Contents/MacOS"
@@ -47,7 +48,7 @@ cat > "$helper/Contents/Info.plist" <<EOF
 <key>CFBundleName</key><string>鼠须管增强设置开发版</string>
 <key>CFBundleDisplayName</key><string>鼠须管增强设置开发版</string>
 <key>LSUIElement</key><true/>
-<key>CFBundleVersion</key><string>0.1.20</string><key>CFBundleShortVersionString</key><string>0.1.20</string>
+<key>CFBundleVersion</key><string>0.1.31</string><key>CFBundleShortVersionString</key><string>0.1.31</string>
 <key>CFBundlePackageType</key><string>APPL</string><key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>NSMicrophoneUsageDescription</key><string>仅在您明确按住说话或主动测试麦克风时采集音频。云测试和语音识别会发送音频至您选择并配置的语音服务。</string>
 <key>SquirrelEnhancementTeamID</key><string>$team</string>

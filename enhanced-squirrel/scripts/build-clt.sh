@@ -62,6 +62,7 @@ cp third-party/Sparkle-LICENSE.txt "$app/Contents/Resources/Licenses/"
 cp resources/Quick5/LICENSE "$app/Contents/Resources/Licenses/rime-quick-LGPL-3.0.txt"
 cp resources/Quick5/GPL-3.0.txt resources/Quick5/AUTHORS resources/Quick5/UPSTREAM.json "$app/Contents/Resources/Licenses/"
 python3 "$root/../tools/bundle_public_pinyin.py" "$app"
+python3 "$root/../tools/bundle_default_letters.py" "$app"
 python3 "$root/../tools/prebuild_public_pinyin.py" "$app"
 cp -R resources/LetterProbe "$app/Contents/Resources/"
 helper="$app/Contents/Resources/SquirrelVoiceHelper.app"
@@ -76,8 +77,8 @@ from pathlib import Path
 app,root=map(Path,sys.argv[1:])
 info=plistlib.loads((root/'resources/Info.plist').read_bytes())
 info.update(CFBundleIdentifier='org.rime.inputmethod.SquirrelEnhanced.Development',
-            CFBundleExecutable='SquirrelEnhancedDev',CFBundleVersion='0.1.28',
-            CFBundleShortVersionString='0.1.28',CFBundleSupportedPlatforms=['MacOSX'],
+            CFBundleExecutable='SquirrelEnhancedDev',CFBundleVersion='0.1.31',
+            CFBundleShortVersionString='0.1.31',CFBundleSupportedPlatforms=['MacOSX'],
             LSMinimumSystemVersion='13.0',SquirrelEnhancementTeamID='',SquirrelEnhancementCertificateSHA1=os.environ['local_certificate_sha1'])
 # Team ID is never fabricated; local trust is an exact certificate pin.
 icon=root/'build/runtime-icon.icns'
@@ -90,7 +91,7 @@ else:
 helper={'CFBundleIdentifier':'org.rime.SquirrelEnhanced.Development.VoiceHelper',
  'CFBundleExecutable':'SquirrelVoiceHelper','CFBundleName':'鼠须管增强设置开发版',
  'CFBundleDisplayName':'鼠须管增强设置开发版','LSUIElement':True,
- 'CFBundlePackageType':'APPL','CFBundleVersion':'0.1.28','CFBundleShortVersionString':'0.1.28',
+ 'CFBundlePackageType':'APPL','CFBundleVersion':'0.1.31','CFBundleShortVersionString':'0.1.31',
  'LSMinimumSystemVersion':'13.0','SquirrelEnhancementTeamID':'',
  'SquirrelEnhancementCertificateSHA1':os.environ['local_certificate_sha1'],
  'NSMicrophoneUsageDescription':'仅在明确按住说话或主动测试时采集；云识别会向您选择并配置的语音服务发送音频。'}
