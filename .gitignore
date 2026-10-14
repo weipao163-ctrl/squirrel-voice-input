@@ -7,6 +7,7 @@
 *~
 # Dependencies and generated output
 .venv/
+.validation-venv/
 venv/
 __pycache__/
 *.py[cod]
