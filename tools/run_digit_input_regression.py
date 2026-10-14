@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--report", type=Path, default=ROOT / "evidence/digit-input-regression.json")
     parser.add_argument("--local-rime", type=Path)
     args = parser.parse_args()
+    (ROOT / "test-work").mkdir(exist_ok=True)
     installed = Path.home() / "Library/Input Methods/SquirrelEnhancedDev.app/Contents"
     work = Path(tempfile.mkdtemp(prefix="digit-regression-", dir=ROOT / "test-work"))
     shared, user = work / "shared", work / "user"
