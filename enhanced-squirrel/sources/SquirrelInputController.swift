@@ -44,6 +44,8 @@ final class SquirrelInputController: IMKInputController {
   private var startupSource: String?
   private var applyingSchema = false
   private var panelRequest: UInt64 = 0
+  private var panelPositionWork: DispatchWorkItem?
+  private static let panelPositionRetryDelays: [TimeInterval] = [0.02, 0.04, 0.08, 0.12, 0.2, 0.25, 0.3]
   // BEGIN ENHANCEMENT STATE
   private var physicalKeys = PhysicalKeys()
   private var letterSettings = LetterSettingsBoundary()
@@ -209,7 +211,9 @@ final class SquirrelInputController: IMKInputController {
 
   override func activateServer(_ sender: Any!) {
     finishStartupInput(commitRaw: true)
-    panelRequest &+= 1
+    cancelPanelPositionUpdate()
+    // The shared panel's last anchor belongs to the previous input target.
+    NSApp.squirrelAppDelegate.panel?.hide()
     enhancementInvalidated()
     inputGeneration &+= 1
     self.client ?= sender as? IMKTextInput
@@ -293,8 +297,10 @@ final class SquirrelInputController: IMKInputController {
   }
 
   override func hidePalettes() {
-    panelRequest &+= 1
-    NSApp.squirrelAppDelegate.panel?.hide()
+    cancelPanelPositionUpdate()
+    if let panel = NSApp.squirrelAppDelegate.panel, panel.inputController === self {
+      panel.hide()
+    }
     super.hidePalettes()
   }
 
@@ -385,6 +391,7 @@ final class SquirrelInputController: IMKInputController {
   }
 
   deinit {
+    panelPositionWork?.cancel()
     startupTimer?.invalidate()
     for observer in enhancementObservers { NotificationCenter.default.removeObserver(observer) }
     EnhancementDeployment.shared.controllers.remove(self)
@@ -623,6 +630,7 @@ private extension SquirrelInputController {
   }
 
   func destroySession() {
+    cancelPanelPositionUpdate()
     if session != 0 {
       _ = rimeAPI.destroy_session(session)
       session = 0
@@ -841,27 +849,56 @@ private extension SquirrelInputController {
 
   // swiftlint:disable:next function_parameter_count
   func showPanel(preedit: String, selRange: NSRange, caretPos: Int, candidates: [String], comments: [String], labels: [String], highlighted: Int, page: Int, lastPage: Bool) {
-    guard client != nil, let panel = NSApp.squirrelAppDelegate.panel else { return }
-    panelRequest &+= 1
+    guard let client, EnhancementBridge.shared.input === self,
+          let panel = NSApp.squirrelAppDelegate.panel else { return }
+    cancelPanelPositionUpdate()
     let request = panelRequest
-    if candidates.isEmpty && preedit.isEmpty {
+    if candidates.isEmpty && preedit.isEmpty && !panel.hasPendingStatus {
       panel.inputController = self
       panel.update(preedit: preedit, selRange: selRange, caretPos: caretPos, candidates: candidates, comments: comments, labels: labels,
                    highlighted: highlighted, page: page, lastPage: lastPage, update: true)
-      return // No visible candidate/preedit: no host geometry IPC is needed.
+      return // No visible candidate/preedit/status: no host geometry IPC is needed.
     }
     // Let the host finish its key callback before asking it for geometry. Keep
     // only the newest request; commit, blur and source changes revoke old work.
-    DispatchQueue.main.async { [weak self] in
-      guard let self, self.panelRequest == request, EnhancementBridge.shared.input === self,
-            let client = self.client else { return }
-      let inputPos = KeyboardInputPosition.caret(client: client) ?? .zero
-      guard self.panelRequest == request, self.client != nil,
-            EnhancementBridge.shared.input === self else { return } // Host calls may reenter IMK.
-      panel.position = inputPos; panel.inputController = self
+    updatePanelPosition(request: request, generation: inputGeneration, client: client, attempt: 0) { panel in
       panel.update(preedit: preedit, selRange: selRange, caretPos: caretPos, candidates: candidates, comments: comments, labels: labels,
                    highlighted: highlighted, page: page, lastPage: lastPage, update: true)
     }
+  }
+
+  private func cancelPanelPositionUpdate() {
+    panelRequest &+= 1
+    panelPositionWork?.cancel(); panelPositionWork = nil
+  }
+
+  private func updatePanelPosition(request: UInt64, generation: UInt64, client: IMKTextInput,
+                                   attempt: Int, present: @escaping (SquirrelPanel) -> Void) {
+    let work = DispatchWorkItem { [weak self, weak client] in
+      guard let self, let client, self.panelRequest == request, self.inputGeneration == generation,
+            self.client === client, EnhancementBridge.shared.input === self,
+            let panel = NSApp.squirrelAppDelegate.panel else { return }
+      self.panelPositionWork = nil
+      let inputPos = KeyboardInputPosition.caret(client: client)
+      // Host geometry calls may reenter activation, commit or deactivation.
+      guard self.panelRequest == request, self.inputGeneration == generation,
+            self.client === client, EnhancementBridge.shared.input === self else { return }
+      guard let inputPos else {
+        // A host may accept marked text before layout is ready. Never turn a
+        // failed query into (0, 0), or reuse another field's last panel anchor.
+        panel.hide()
+        if attempt < Self.panelPositionRetryDelays.count {
+          self.updatePanelPosition(request: request, generation: generation, client: client,
+                                   attempt: attempt + 1, present: present)
+        }
+        return
+      }
+      panel.position = inputPos; panel.inputController = self
+      present(panel)
+    }
+    panelPositionWork = work
+    if attempt == 0 { DispatchQueue.main.async(execute: work) }
+    else { DispatchQueue.main.asyncAfter(deadline: .now() + Self.panelPositionRetryDelays[attempt - 1], execute: work) }
   }
 
   private func handleASCIIModeToggle(_ notification: Notification) {

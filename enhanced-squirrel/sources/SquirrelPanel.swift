@@ -13,11 +13,18 @@ final class SquirrelPanel: NSPanel {
   private let back: NSView
   var inputController: SquirrelInputController?
 
+  // Screen coordinates can have a nonzero or negative origin. Compare against
+  // this screen's midpoint instead of treating its height as global Y.
+  static func caretIsInLowerHalf(_ caret: NSRect, screen: NSRect) -> Bool {
+    caret.midY < screen.midY
+  }
+
   var position: NSRect
   private var screenRect: NSRect = .zero
   private var maxHeight: CGFloat = 0
 
   private var statusMessage: String = ""
+  var hasPendingStatus: Bool { !statusMessage.isEmpty }
   private var statusTimer: Timer?
 
   private var preedit: String = ""
@@ -448,8 +455,8 @@ private extension SquirrelPanel {
 
       maxHeight = 0
     } else {
-      if theme.memorizeSize && (vertical && position.midY / screenRect.height < 0.5) ||
-          (vertical && position.minX + max(contentRect.width, maxHeight) + theme.edgeInset.width * 2 > screenRect.maxX) {
+      if theme.memorizeSize && vertical && (Self.caretIsInLowerHalf(position, screen: screenRect) ||
+          position.minX + max(contentRect.width, maxHeight) + theme.edgeInset.width * 2 > screenRect.maxX) {
         if contentRect.width >= maxHeight {
           maxHeight = contentRect.width
         } else {
@@ -466,7 +473,7 @@ private extension SquirrelPanel {
 
       if vertical {
         // Anchor vertical panels on one side of the cursor to avoid jumping while typing.
-        if position.midY / screenRect.height >= 0.5 {
+        if !Self.caretIsInLowerHalf(position, screen: screenRect) {
           panelRect.origin.y = position.minY - SquirrelTheme.offsetHeight - panelRect.height + theme.pagingOffset
         } else {
           panelRect.origin.y = position.maxY + SquirrelTheme.offsetHeight
