@@ -369,7 +369,7 @@ final class CoreTests:XCTestCase {
     XCTAssertNil(link.connectionID); XCTAssertFalse(link.ready); XCTAssertFalse(link.settingsPending)
   }
   private func manyProfiles(_ count:Int,revision:UInt64 = 0) -> Settings {
-    var value=Settings(); value.revision=revision
+    var value=Settings(); value.revision=revision; value.letters=[:]
     for index in 0..<count { value.letters["profile\(index)"]=LetterProfile() }
     return value
   }
@@ -1730,5 +1730,72 @@ final class CoreTests:XCTestCase {
         profile:explicitFixtureProfile,processors:recipe.processorsBefore,replaceLegacy:recipe.replaceLegacy)
       XCTAssertEqual(result.yaml,recipe.expected,recipe.name); XCTAssertEqual(result.expectedProcessors,recipe.processorsAfter,recipe.name)
     }
+  }
+
+  func testFreshSettingsEnableBundledPinyinWithoutVoice() throws {
+    let fresh = Settings()
+    XCTAssertEqual(Set(fresh.letters.keys), ["luna_pinyin"])
+    let profile = try XCTUnwrap(fresh.letters["luna_pinyin"])
+    XCTAssertTrue(profile.enabled); XCTAssertTrue(profile.hideCandidates)
+    XCTAssertTrue(profile.useDefaultAppearance)
+    XCTAssertEqual(profile.keys,"asdfghjkl"); XCTAssertEqual(profile.pageSize,9)
+    XCTAssertFalse(fresh.voice.enabled); XCTAssertNil(fresh.voice.binding)
+    try fresh.validate()
+  }
+  func testSavedEmptyAndDisabledProfilesRemainUnchanged() throws {
+    var saved = Settings(); saved.letters = [:]; saved.revision = 14
+    let empty = try JSONDecoder().decode(Settings.self,from:JSONEncoder().encode(saved))
+    XCTAssertTrue(empty.letters.isEmpty); XCTAssertEqual(empty.revision,14)
+    saved.letters["luna_pinyin"] = LetterProfile()
+    let disabled = try JSONDecoder().decode(Settings.self,from:JSONEncoder().encode(saved))
+    XCTAssertFalse(try XCTUnwrap(disabled.letters["luna_pinyin"]).enabled)
+    XCTAssertEqual(disabled,saved)
+  }
+  func testMissingSettingsUsesDefaultsButCorruptionDoesNotOverwrite() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at:directory) }
+    let file = directory.appendingPathComponent("settings.json")
+    let store = SettingsStore(url:file)
+    XCTAssertEqual(try store.load(),Settings())
+    XCTAssertFalse(FileManager.default.fileExists(atPath:file.path))
+    try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+    let corrupt = Data("invalid settings".utf8);try corrupt.write(to:file)
+    XCTAssertThrowsError(try store.load())
+    XCTAssertThrowsError(try store.save(Settings()))
+    XCTAssertEqual(try Data(contentsOf:file),corrupt)
+    XCTAssertTrue(Settings.disabledFallback.letters.isEmpty)
+    XCTAssertFalse(Settings.disabledFallback.voice.enabled)
+  }
+  func testSharedDefaultIsAdoptedOnlyWithProvenanceAndNoUserPatch() throws {
+    let original = ["ascii_composer","speller","selector"]
+    let installed = [ManagedLetterPatch.module] + original
+    func baseline(_ schema:String = "luna_pinyin",_ patch:Bool = false,_ ownership:Bool = false,_ trusted:Bool = true,_ processors:[String]? = nil) -> [String] {
+      BundledLetterDefaults.deploymentBaseline(schema:schema,hasUserPatch:patch,
+        hasOwnership:ownership,trustedBundledDefault:trusted,processors:processors ?? installed)
+    }
+    XCTAssertEqual(baseline(),original)
+    XCTAssertEqual(baseline("luna_pinyin",true),installed)
+    XCTAssertEqual(baseline("luna_pinyin",false,true),installed)
+    XCTAssertEqual(baseline("luna_pinyin",false,false,false),installed)
+    XCTAssertEqual(baseline("other_pinyin"),installed)
+    let duplicated = installed + [ManagedLetterPatch.module]
+    XCTAssertEqual(baseline("luna_pinyin",false,false,true,duplicated),duplicated)
+    let foreign = ["lua_processor@foreign"] + installed
+    XCTAssertEqual(baseline("luna_pinyin",false,false,true,foreign),foreign)
+  }
+  func testBundledDefaultCanDeployChangedPageSizeAndRestore() throws {
+    let original = ["ascii_composer","speller","selector"]
+    let baseline = BundledLetterDefaults.deploymentBaseline(schema:"luna_pinyin",hasUserPatch:false,
+      hasOwnership:false,trustedBundledDefault:true,processors:[ManagedLetterPatch.module]+original)
+    var profile = try XCTUnwrap(Settings().letters["luna_pinyin"])
+    profile.keys="abc";profile.pageSize=3
+    let plan = try ManagedLetterPatch.plan(schema:"luna_pinyin",existing:nil,ownership:nil,
+      profile:profile,processors:baseline)
+    XCTAssertEqual(plan.expectedProcessors,[ManagedLetterPatch.module]+original)
+    XCTAssertEqual(try XCTUnwrap(plan.yaml).components(separatedBy:ManagedLetterPatch.module).count-1,1)
+    profile.enabled=false
+    let restored = try ManagedLetterPatch.plan(schema:"luna_pinyin",existing:plan.yaml,
+      ownership:plan.ownership,profile:profile,processors:[])
+    XCTAssertNil(restored.yaml);XCTAssertNil(restored.ownership)
   }
 }
