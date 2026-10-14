@@ -89,3 +89,13 @@ bash enhanced-squirrel/scripts/install-dev.sh --apply
 键盘持续输入、资源指标和旧控制器对照的测量范围见[0.1.27 性能报告](2026-10-14_keyboard-performance-report.md)。`tools/run_native_keyboard_input.py --label custom-run` 保存独立报告；原生候选窗口检查自动复用 CLT 构建的 SDK。
 
 首次输入候选位置的重试、取消、模式提示及竖排布局回归见[0.1.28 定位报告](2026-10-14_fix-candidate-position-report.md)。多 SDK 环境运行 `run_native_audio.py` 时，用 `--sdk` 显式指定构建记录中的 SDK；该工具会重建 `swift-clt` 模块，不要与其他使用该目录的构建/检查并行运行。
+
+## 0.1.31 首次字母选词默认值
+
+两条构建路径在公开词库预编译前执行 `tools/bundle_default_letters.py`，仅向 App 的 SharedSupport 和 Resources 写入已声明的默认朙月拼音补丁及生产 Lua。用户目录不参与构建。`SettingsStore` 只有在设置文件缺失时使用新默认，已有保存值和禁用选择按原值解析。手动修改方案结构仍保留部署入口。
+
+```bash
+python3 tools/run_default_letters.py --app enhanced-squirrel/build/CLT/SquirrelEnhancedDev.app
+```
+
+此检查在新的隔离目录启动实际包内 Rime；分别覆盖首次空格/字母/禁用和用户自定义补丁优先级。详情见[修复与验收范围](2026-10-14_fix-default-letter-selection-report.md)。
