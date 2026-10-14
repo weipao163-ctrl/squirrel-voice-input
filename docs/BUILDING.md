@@ -83,3 +83,5 @@ bash enhanced-squirrel/scripts/install-dev.sh --apply
 安装目录为当前用户的 `~/Library/Input Methods/SquirrelEnhancedDev.app`，设置与词库位于 `~/Library/Application Support/SquirrelEnhancedDev`。增强版使用独立标识，更新保留设置，并记录回滚备份。首次安装后可能需要注销并重新登录，再从系统设置添加“鼠须管增强开发版”。
 
 不要使用上游 Makefile 的系统安装目标替代增强版安装脚本。预编译安装包从 [Releases](https://github.com/weipao163-ctrl/squirrel-voice-input/releases) 下载；`tools/build_macos_installer.py` 只会在本地构建和来源绑定的回归报告齐全后生成候选包，不能绕过签名与验证要求。
+
+键盘持续输入、资源指标和旧控制器对照的测量范围见[0.1.27 性能报告](2026-10-14_keyboard-performance-report.md)。`tools/run_native_keyboard_input.py --label custom-run` 保存独立报告；原生候选窗口检查自动复用 CLT 构建的 SDK。

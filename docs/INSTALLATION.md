@@ -6,13 +6,13 @@
 - 一个具有管理员安装权限的本地用户；安装目标是当前登录用户。
 - 语音功能需要自行开通的百炼或火山引擎语音服务及对应凭据。
 
-从 [v0.1.26 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.26) 下载 `.pkg` 与同名 `.pkg.sha256`。将两者放在同一目录，在该目录执行：
+从 [v0.1.27 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.27) 下载 `.pkg` 与同名 `.pkg.sha256`。将两者放在同一目录，在该目录执行：
 
 ```bash
-shasum -a 256 -c SquirrelVoiceInput-0.1.20261014.1-arm64.pkg.sha256
+shasum -a 256 -c SquirrelVoiceInput-0.1.20261014.2-arm64.pkg.sha256
 ```
 
-确认显示 `OK`，再双击安装包。应用版本为 0.1.26，Installer 的构建版本为 0.1.20261014.1。
+确认显示 `OK`，再双击安装包。应用版本为 0.1.27，Installer 的构建版本为 0.1.20261014.2。
 
 ## 首次安装的系统放行
 
