@@ -7,8 +7,10 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
 spec = importlib.util.spec_from_file_location("public_guard", ROOT/"tools/check_public_source.py")
 guard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guard)
@@ -21,6 +23,8 @@ class PublicSourceTests(unittest.TestCase):
         guard.ROOT = self.root
         public = Path("enhanced-squirrel/resources/Quick5")
         shutil.copytree(ROOT/public, self.root/public)
+        dictionaries = Path('enhanced-squirrel/resources/PublicPinyin')
+        shutil.copytree(ROOT/dictionaries, self.root/dictionaries)
     def tearDown(self):
         guard.ROOT = self.old
         self.temp.cleanup()
@@ -52,6 +56,12 @@ class PublicSourceTests(unittest.TestCase):
         self.assertEqual(self.result(), 1)
     def test_upstream_dictionary_mutation_rejected(self):
         self.write("enhanced-squirrel/resources/Quick5/quick5.dict.yaml", b"changed fixture")
+        self.assertEqual(self.result(), 1)
+    def test_public_pinyin_dictionary_mutation_rejected(self):
+        self.write('enhanced-squirrel/resources/PublicPinyin/dictionaries/base.dict.yaml', b'changed fixture')
+        self.assertEqual(self.result(), 1)
+    def test_personal_file_inside_public_namespace_rejected(self):
+        self.write('enhanced-squirrel/resources/PublicPinyin/dictionaries/sogou_personal.dict.yaml', b'private fixture')
         self.assertEqual(self.result(), 1)
     def test_staged_secret_detected_after_working_copy_cleaned(self):
         self.git("init", "-q")
