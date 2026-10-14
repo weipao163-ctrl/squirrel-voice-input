@@ -1,0 +1,14 @@
+# Rime public dictionary; no personal dictionaries or learning data.
+# Sources: iDvel/rime-ice, GPL-3.0-only; see UPSTREAM.json.
+---
+name: squirrel_public_pinyin
+version: "2026-10-14"
+sort: by_weight
+use_preset_vocabulary: false
+import_tables:
+  - squirrel_public_pinyin/8105
+  - squirrel_public_pinyin/base
+  - squirrel_public_pinyin/ext
+  - squirrel_public_pinyin/tencent
+  - squirrel_public_pinyin/others
+...
