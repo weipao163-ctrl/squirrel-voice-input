@@ -2,7 +2,9 @@
 macos系统下当前唯一一款支持字母选词的中文输入法
 基于 [Rime / Squirrel](https://github.com/rime/squirrel) 的 macOS 输入法扩展，让拼音输入、空格进入字母选词，以及按住热键说话在同一套输入法中协作。
 
-这是社区衍生项目，并非 Rime、阿里云或火山引擎的官方产品。当前源码版本为 **0.1.28**，主程序运行要求 **macOS 13+**；已构建与使用验证的主要环境为 Apple Silicon。Git 代码区提供源码、开发文档、测试及公开默认资源；[Releases](https://github.com/weipao163-ctrl/squirrel-voice-input/releases) 提供可安装的 Apple Silicon 安装包。**源码和安装包均不包含个人词库或预置 API Key**。
+这是社区衍生项目，并非 Rime、阿里云或火山引擎的官方产品。当前源码版本为 **0.1.31**，主程序运行要求 **macOS 13+**；已构建与使用验证的主要环境为 Apple Silicon。Git 代码区提供源码、开发文档、测试及公开默认资源；[Releases](https://github.com/weipao163-ctrl/squirrel-voice-input/releases) 提供可安装的 Apple Silicon 安装包。**源码和安装包均不包含个人词库或预置 API Key**。
+
+0.1.31 修复首次安装后还需手动部署才能启用字母选词：默认朙月拼音已经接入处理器及共享脚本，首次设置默认启用，选中输入法即可按空格展开候选、按字母上屏。已有设置与自定义方案不被默认值覆盖；见[首次字母选词修复报告](docs/2026-10-14_fix-default-letter-selection-report.md)。
 
 0.1.23 将语音目标统一到普通拼音的原生输入会话。TextEdit、WPS 工作簿、单元格编辑与公式栏已通过本机位置复核，用户确认文档和表格可输入；详见 [验证范围](docs/VALIDATION.md)。
 
@@ -20,7 +22,7 @@ macos系统下当前唯一一款支持字母选词的中文输入法
 
 ## 下载与安装
 
-从 [v0.1.28 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.28) 下载 `.pkg` 安装包及 SHA-256 校验文件，按照 [安装说明](docs/INSTALLATION.md) 安装。适用于 **Apple Silicon（M 系列）与 macOS 13+**；本次没有 Intel 安装包。
+从 [v0.1.31 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.31) 下载 `.pkg` 安装包及 SHA-256 校验文件，按照 [安装说明](docs/INSTALLATION.md) 安装。适用于 **Apple Silicon（M 系列）与 macOS 13+**；本次没有 Intel 安装包。
 
 **首次安装需要手动允许：安装包未使用 Apple Developer ID 签名或公证，若 macOS 拦截，请在「系统设置 → 隐私与安全（性）」点击「仍要打开」并确认安装。** 不需要关闭系统安全保护。具体步骤见 [Apple 官方说明](https://support.apple.com/zh-cn/102445)。
 
@@ -37,7 +39,7 @@ macos系统下当前唯一一款支持字母选词的中文输入法
 - **跨应用定位保护**：与拼音共用当前原生输入会话、光标查询和提交函数；不按应用或控件角色添加兼容名单。辅助功能元数据缺失时，仍校验原生会话和所属窗口。目标改变时保留草稿，避免写入其他位置。
 - **独立安装与数据目录**：增强版使用自己的应用、设置和 Rime 数据目录，并保留更新回滚入口。
 
-增强选词和语音功能首次默认关闭。需要用户自行选择方案、启用功能并配置热键和服务；默认值不会覆盖已保存配置。
+首次安装默认启用朙月拼音的两阶段字母选词，无需点击“确认应用并重新部署”。语音仍默认关闭，需要自行配置凭据、热键和权限。已有用户的开关、字母、页大小和词库配置保持原选择；其他自定义方案及页大小结构改动仍使用设置页的部署流程。开发者本机继续使用自己的原词库；下载的公开词库只用于隔离测试和 GitHub 源码/完整安装包，发布排除全部个人数据。
 
 ## 开始使用与开发
 
