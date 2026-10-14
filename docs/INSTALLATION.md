@@ -6,13 +6,13 @@
 - 一个具有管理员安装权限的本地用户；安装目标是当前登录用户。
 - 语音功能需要自行开通的百炼或火山引擎语音服务及对应凭据。
 
-从 [v0.1.25 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.25) 下载 `.pkg` 与同名 `.pkg.sha256`。将两者放在同一目录，在该目录执行：
+从 [v0.1.26 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.26) 下载 `.pkg` 与同名 `.pkg.sha256`。将两者放在同一目录，在该目录执行：
 
 ```bash
-shasum -a 256 -c SquirrelVoiceInput-0.1.20261012.1-arm64.pkg.sha256
+shasum -a 256 -c SquirrelVoiceInput-0.1.20261014.1-arm64.pkg.sha256
 ```
 
-确认显示 `OK`，再双击安装包。应用版本为 0.1.25，Installer 的构建版本为 0.1.20261012.1。
+确认显示 `OK`，再双击安装包。应用版本为 0.1.26，Installer 的构建版本为 0.1.20261014.1。
 
 ## 首次安装的系统放行
 
@@ -36,7 +36,11 @@ shasum -a 256 -c SquirrelVoiceInput-0.1.20261012.1-arm64.pkg.sha256
 
 使用细节见 [使用说明](USAGE.md)，数据与网络范围见 [隐私说明](PRIVACY.md)。新电脑不会继承其他电脑的 API Key、麦克风配置或权限。
 
-## 0.1.25 更新后检查
+## 0.1.26 更新后检查
+
+新建普通输入框后连续输入 `nihao`，开头字母应保持在同一段拼音中，按空格后选择候选。初始化中的输入会先作为未提交文本保留；切换输入源或失活后不继续延迟重放。修复与响应测量范围见[首次输入修复报告](2026-10-14_fix-first-input-latency-report.md)。
+
+以下字母与数字行为继承 0.1.25：
 
 启用字母选词时，数字 0–9 和数字小键盘均作为普通数字输入。候选已展开或隐藏时都不会用数字选词。输入 `lovewin2k` 后按回车，应原样提交；按空格会提交原文及分隔空格。
 
