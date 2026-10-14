@@ -62,7 +62,20 @@ enum EnhancementPatch {
     let manifest = directory.appendingPathComponent(manifestName)
     let ownership = fm.fileExists(atPath:manifest.path) ? try readBounded(manifest,limit:2 * 1024 * 1024) : nil
     let parsed = try patchKeys(existing ?? "patch:\n")
-    let processors = profile.enabled ? try readProcessors(schema:schema) : []
+    var processors = profile.enabled ? try readProcessors(schema:schema) : []
+    if profile.enabled && schema == BundledLetterDefaults.schema && existing == nil && ownership == nil {
+      let template = Bundle.main.url(forResource:"luna_pinyin.custom",withExtension:"yaml",subdirectory:"DefaultLetterSelection")
+      let shared = Bundle.main.bundleURL.appendingPathComponent("Contents/SharedSupport/luna_pinyin.custom.yaml")
+      var config = RimeConfig(); let api = rime_get_api_stdbool().pointee
+      var active = false
+      if api.schema_open(schema,&config) {
+        _ = api.config_get_bool(&config,"squirrel_enhanced/default_letter_selection",&active)
+        _ = api.config_close(&config)
+      }
+      let matching = try template.map { try readBounded($0,limit:256 * 1024) == readBounded(shared,limit:256 * 1024) } ?? false
+      processors = BundledLetterDefaults.deploymentBaseline(schema:schema,hasUserPatch:false,
+        hasOwnership:false,trustedBundledDefault:active && matching,processors:processors)
+    }
     let plan = try ManagedLetterPatch.plan(schema:schema,existing:existing,ownership:ownership,
       profile:profile,processors:processors,replaceLegacy:replaceLegacy,parsedKeys:parsed)
     // libRime's real parser, not a regex, determines whether our preserved text

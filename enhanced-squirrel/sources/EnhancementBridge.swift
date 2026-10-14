@@ -43,7 +43,7 @@ final class EnhancementBridge: NSObject, AuthenticatedListenerDelegate {
   override init() {
     let url = FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent("Library/Application Support/SquirrelEnhancedDev/settings.json")
-    store = SettingsStore(url:url); configuration = (try? store.load()) ?? store.lastValidReadOnly() ?? Settings()
+    store = SettingsStore(url:url); configuration = (try? store.load()) ?? store.lastValidReadOnly() ?? Settings.disabledFallback
     trust=PeerTrust.configured(in:Bundle.main)
     super.init()
     for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.willSleepNotification,
@@ -151,7 +151,7 @@ final class EnhancementBridge: NSObject, AuthenticatedListenerDelegate {
       // Check origin again after queueing, then verify the persistent authority.
       guard self.withLink({ $0.accepts(id) }), let disk = try? self.store.load(), disk == value else { return }
       self.configuration = value; self.input?.enhancementConfigurationChanged(value)
-      let receipt = SettingsReceipt(revision:value.revision,message:"输入法已接收并缓存配置；开关按安全边界应用，语音从下一完整按键周期生效。字母处理器/页大小未在这里部署，请按 GUI 流程确认。")
+      let receipt = SettingsReceipt(revision:value.revision,message:"输入法已接收并缓存配置；开关按安全边界应用，语音从下一完整按键周期生效。默认拼音已内置字母处理器；其他方案或页大小结构改动才需在 GUI 确认部署。")
       if let data = try? Wire.encode(receipt) { self.helper?.settingsApplied(data) }
     }
   }
