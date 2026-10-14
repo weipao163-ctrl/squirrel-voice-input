@@ -8,7 +8,7 @@ import CryptoKit
 
 final class HelperModel: NSObject, ObservableObject, HelperCommands {
   @Published var draft = Settings()
-  @Published var status = "未就绪：默认关闭语音与字母增强。"
+  @Published var status = "首次安装默认启用朙月拼音字母选词；语音需配置后启用。"
   @Published var newKey = ""
   @Published var newDoubaoKey = ""
   @Published private(set) var connectionStatus="填写地域、Workspace ID 和 API Key 后自动校验连接。"
@@ -119,6 +119,7 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
     catch {
       // Preserve the failed primary file. A known-valid fallback is read-only,
       // voice-off, and cannot be saved over the primary until explicit recovery.
+      saved = Settings.disabledFallback; draft = saved
       needsRecovery = (try? store.load()) == nil
       if needsRecovery, let fallback = store.lastValidReadOnly() {
         saved = fallback; draft = fallback; recoveryAvailable = true
@@ -410,7 +411,7 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
     draft = Settings(); draft.revision = saved.revision; draft.voice.credentialReference = ref; draft.voice.doubao.credentialReference = doubaoRef
     // Retain schema identities so the GUI can explicitly remove their managed
     // patches. Dropping the map would leave enabled source patches unreachable.
-    for schema in schemas { draft.letters[schema] = LetterProfile() }
+    for schema in schemas { draft.letters[schema] = Settings.defaultLetters[schema] ?? LetterProfile() }
     status = "已恢复非秘密默认值，尚未保存；Key 不自动删除。已配置方案保留为关闭条目，保存后逐方案安全部署恢复原结构。"
   }
   func requestMicrophone() {
