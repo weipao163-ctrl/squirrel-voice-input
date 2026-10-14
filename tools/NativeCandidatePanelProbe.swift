@@ -28,8 +28,8 @@ final class SquirrelInputController {
     func check(_ name:String,_ pass:Bool) { checks.append(["name":name,"passed":pass]) }
     try files.createDirectory(at:root.appendingPathComponent("build"),withIntermediateDirectories:true)
     let fixture = root.appendingPathComponent("build/squirrel.yaml")
-    func writeConfig(_ format:String,showPaging:Bool) throws {
-      try "style:\n  candidate_format: '\(format)'\n  show_paging: \(showPaging)\n  font_point: 16\n  hilited_corner_radius: 0\n  corner_radius: 2\n  color_scheme: native\n".write(to:fixture,atomically:true,encoding:.utf8)
+    func writeConfig(_ format:String,showPaging:Bool,vertical:Bool = false,memorize:Bool = true) throws {
+      try "style:\n  candidate_format: '\(format)'\n  show_paging: \(showPaging)\n  text_orientation: \(vertical ? "vertical" : "horizontal")\n  memorize_size: \(memorize)\n  font_point: 16\n  hilited_corner_radius: 0\n  corner_radius: 2\n  color_scheme: native\n".write(to:fixture,atomically:true,encoding:.utf8)
     }
     let panel = SquirrelPanel(position:NSRect(x:300,y:300,width:1,height:20))
     let config = SquirrelConfig()
@@ -84,6 +84,31 @@ final class SquirrelInputController {
       guard let shape = $0 as? CAShapeLayer, let path = shape.path else { return true }
       return [path.boundingBox.minX,path.boundingBox.minY,path.boundingBox.width,path.boundingBox.height].allSatisfy { $0.isFinite }
     } == true)
+    config.close()
+    // A translated display must produce the same anchoring direction. This
+    // covers stacked/negative-coordinate displays without requiring hardware.
+    for origin in [CGFloat(-1200), 0, 1200] {
+      let screen = NSRect(x:0,y:origin,width:1600,height:1000)
+      check("vertical_anchor_is_translation_invariant_\(Int(origin))",
+        SquirrelPanel.caretIsInLowerHalf(NSRect(x:300,y:origin+200,width:1,height:20),screen:screen) &&
+        !SquirrelPanel.caretIsInLowerHalf(NSRect(x:300,y:origin+700,width:1,height:20),screen:screen))
+    }
+    for memorize in [false, true] {
+      try writeConfig("[candidate]",showPaging:false,vertical:true,memorize:memorize)
+      guard config.openBaseConfig() else { fatalError("Vertical fixture unavailable") }
+      let screen = NSScreen.main!.frame
+      let verticalPanel = SquirrelPanel(position:NSRect(x:screen.maxX - 1,y:screen.minY + screen.height * 0.75,width:1,height:20))
+      verticalPanel.load(config:config,forDarkMode:false); verticalPanel.load(config:config,forDarkMode:true)
+      func render(_ text:String) {
+        verticalPanel.update(preedit:"",selRange:.empty,caretPos:0,candidates:[text],comments:[""],labels:["a"],highlighted:0,page:0,lastPage:true,update:true)
+      }
+      render("候选"); let shortHeight = verticalPanel.frame.height
+      render(String(repeating:"候选",count:8)); let longHeight = verticalPanel.frame.height
+      render("候选")
+      check(memorize ? "vertical_size_memory_remains_opt_in" : "disabled_size_memory_can_shrink_at_screen_edge",
+            longHeight > shortHeight && abs(verticalPanel.frame.height - (memorize ? longHeight : shortHeight)) < 1)
+      verticalPanel.hide(); config.close()
+    }
     let report:[String:Any] = ["status":checks.allSatisfy { $0["passed"] as? Bool == true } ? "PASS" : "FAIL",
       "checks":checks,"microphone_used":false,"cloud_calls":0,"personal_dictionary_used":false,
       "scope":"Production native candidate rendering/configuration/hit testing; callback stubs; no installed IMK typing"]

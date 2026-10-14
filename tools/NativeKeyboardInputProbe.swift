@@ -43,6 +43,8 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
   var bundleQueryDelay: TimeInterval = 0
   var bundle = "org.rime.KeyboardProbeClient"
   var onGeometry: (() -> Void)?
+  var geometryAvailable = true
+  var fallbackRect: NSRect = .zero
   lazy var proxy: Any = KeyboardProbeWrapClient(self)
   private func text(_ value: Any?) -> String {
     (value as? NSAttributedString)?.string ?? (value as? String ?? "")
@@ -59,7 +61,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     if queryDelay > 0 { Thread.sleep(forTimeInterval: queryDelay) }
     onGeometry?()
     let screen = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1000, height: 1000)
-    lineHeightRectangle?.pointee = NSRect(x: screen.midX, y: screen.midY, width: 1, height: 18)
+    lineHeightRectangle?.pointee = geometryAvailable ? NSRect(x: screen.midX, y: screen.midY, width: 1, height: 18) : .zero
     return [:]
   }
   func validAttributesForMarkedText() -> [Any]! { [] }
@@ -75,7 +77,10 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
   func supportsProperty(_ property: TSMDocumentPropertyTag) -> Bool { false }
   func uniqueClientIdentifierString() -> String! { "keyboard-probe-client" }
   func string(from range: NSRange, actualRange: NSRangePointer!) -> String! { nil }
-  func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer!) -> NSRect { .zero }
+  func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer!) -> NSRect {
+    actualRange?.pointee = range
+    return fallbackRect
+  }
 }
 
 @main enum NativeKeyboardInputProbe {
@@ -245,6 +250,112 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
       pump()
       check("geometry_reentrant_blur_cannot_reopen_old_panel", !delegate.panel!.isVisible)
       client.onGeometry = nil
+    }
+    // Hosts can accept marked text before their layout has a usable caret.
+    // Exercise the actual asynchronous presentation, without another key to
+    // accidentally hide the absence of a retry in the production controller.
+    do {
+      let client = KeyboardProbeClient(); client.geometryAvailable = false
+      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      controller.activateServer(client.proxy)
+      _ = send(controller, client, "n"); _ = send(controller, client, "i")
+      _ = send(controller, client, " ", code: 49)
+      pump(0.015)
+      check("missing_first_caret_never_shows_a_corner_panel", !delegate.panel!.isVisible)
+      client.geometryAvailable = true
+      pump(0.25)
+      check("late_host_layout_recovers_without_another_key", delegate.panel!.isVisible && delegate.panel!.position.height == 18)
+      check("panel_position_retries_never_insert_or_mark_text", client.committed.isEmpty && !client.marked.isEmpty)
+      controller.deactivateServer(client.proxy)
+    }
+    do {
+      let client = KeyboardProbeClient(); client.geometryAvailable = false
+      let screen = NSScreen.main!.frame
+      client.fallbackRect = NSRect(x: screen.midX + 30, y: screen.midY, width: 0, height: 20)
+      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      controller.activateServer(client.proxy)
+      _ = send(controller, client, "n"); _ = send(controller, client, "i")
+      _ = send(controller, client, " ", code: 49)
+      pump()
+      check("document_range_caret_fallback_still_positions_panel", delegate.panel!.isVisible && delegate.panel!.position == client.fallbackRect)
+      controller.deactivateServer(client.proxy)
+    }
+    do {
+      let client = KeyboardProbeClient(); client.geometryAvailable = false
+      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      controller.activateServer(client.proxy)
+      delegate.panel!.updateStatus(long:"中文模式",short:"中")
+      _ = send(controller, client, "\u{1b}", code:53)
+      pump(0.015)
+      check("initial_mode_hint_does_not_use_stale_or_zero_anchor", !delegate.panel!.isVisible)
+      client.geometryAvailable = true; pump(0.25)
+      check("pending_mode_hint_recovers_at_current_caret", delegate.panel!.isVisible && delegate.panel!.position.height == 18)
+      controller.deactivateServer(client.proxy)
+    }
+    for action in ["commit", "blur", "empty", "replacement"] {
+      let client = KeyboardProbeClient(); client.geometryAvailable = false
+      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      controller.activateServer(client.proxy)
+      _ = send(controller, client, "n"); _ = send(controller, client, "i")
+      _ = send(controller, client, " ", code: 49)
+      pump(0.015)
+      let queries = client.geometryQueries
+      client.geometryAvailable = true
+      switch action {
+      case "commit": _ = send(controller, client, "a")
+      case "blur": controller.deactivateServer(client.proxy)
+      case "empty": _ = send(controller, client, "\u{1b}", code: 53)
+      default:
+        let other = KeyboardProbeClient()
+        controller.activateServer(other.proxy)
+        pump(0.25)
+      }
+      pump(0.25)
+      check("delayed_caret_retry_revoked_on_" + action, client.geometryQueries == queries && !delegate.panel!.isVisible)
+      if action != "blur" { controller.deactivateServer(client.proxy) }
+    }
+    do {
+      let client = KeyboardProbeClient(); client.geometryAvailable = false
+      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      controller.activateServer(client.proxy)
+      _ = send(controller, client, "n"); _ = send(controller, client, "i")
+      _ = send(controller, client, " ", code: 49)
+      pump(1.3)
+      let queries = client.geometryQueries
+      pump(0.3)
+      check("unavailable_caret_has_bounded_retries_and_no_corner", queries > 1 && queries <= 8 && client.geometryQueries == queries && !delegate.panel!.isVisible)
+      controller.deactivateServer(client.proxy)
+    }
+    do {
+      EnhancementBridge.shared.settings.letters["letter_fixture"]?.hideCandidates = false
+      let client = KeyboardProbeClient(); client.geometryAvailable = false
+      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      controller.activateServer(client.proxy)
+      _ = send(controller, client, "n"); _ = send(controller, client, "i")
+      pump(0.015)
+      check("editing_candidate_preview_waits_for_layout", !delegate.panel!.isVisible && client.marked == "ni")
+      client.geometryAvailable = true
+      pump(0.25)
+      check("editing_candidate_preview_recovers_at_caret", delegate.panel!.isVisible && delegate.panel!.position.height == 18)
+      _ = send(controller, client, "\u{1b}", code: 53)
+      controller.deactivateServer(client.proxy)
+      EnhancementBridge.shared.settings.letters["letter_fixture"]?.hideCandidates = true
+    }
+    do {
+      let old = KeyboardProbeClient(), current = KeyboardProbeClient()
+      let previous = SquirrelInputController(server: server, delegate: nil, client: old.proxy)!
+      previous.activateServer(old.proxy)
+      _ = send(previous, old, "n")
+      let controller = SquirrelInputController(server: server, delegate: nil, client: current.proxy)!
+      controller.activateServer(current.proxy)
+      _ = send(controller, current, "n"); _ = send(controller, current, "i")
+      _ = send(controller, current, " ", code: 49)
+      pump()
+      previous.deactivateServer(old.proxy)
+      check("late_old_controller_blur_cannot_hide_current_candidates", delegate.panel!.isVisible && delegate.panel!.inputController === controller)
+      _ = send(controller, current, "a")
+      check("new_controller_still_commits_after_old_controller_blur", !current.committed.isEmpty && current.fallback.isEmpty)
+      controller.deactivateServer(current.proxy)
     }
     // A real librime service unavailable at the first two keys. The production
     // controller, not a copied routing function, must retain and replay them.
