@@ -9,6 +9,7 @@ import UserNotifications
 import Sparkle
 import AppKit
 import InputMethodKit
+import EnhancementCore
 
 final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUStandardUserDriverDelegate, UNUserNotificationCenterDelegate {
   static let rimeWikiURL = URL(string: "https://github.com/rime/home/wiki")!
@@ -20,6 +21,8 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
   var panel: SquirrelPanel?
   var enableNotifications = false
   var showStatusIcon: Bool = true
+  private var loadedStyleSchema: String?
+  private var loadedStyleAppearance: CandidateAppearance?
   var statusItem: NSStatusItem?
   let updateController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
   var supportsGentleScheduledUpdateReminders: Bool {
@@ -173,6 +176,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
   }
 
   func loadSettings() {
+    loadedStyleSchema = nil; loadedStyleAppearance = nil
     config = SquirrelConfig()
     if !config!.openBaseConfig() {
       return
@@ -194,6 +198,9 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
     let schema = SquirrelConfig()
     let profile = EnhancementBridge.shared.settings.letters[schemaID]
     let appearance = profile?.enabled == true && profile?.useDefaultAppearance != true ? profile?.appearance : nil
+    // The panel is shared by controllers. Reuse its current schema/theme on a
+    // new window; changed schema, GUI appearance or deployment reloads it.
+    if loadedStyleSchema == schemaID && loadedStyleAppearance == appearance { return }
     if let panel = panel, let config = self.config {
       if schema.open(schemaID: schemaID, baseConfig: config) && schema.has(section: "style") {
         panel.load(config: schema, forDarkMode: false, appearance:appearance)
@@ -202,6 +209,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
         panel.load(config: config, forDarkMode: false, appearance:appearance)
         panel.load(config: config, forDarkMode: true, appearance:appearance)
       }
+      loadedStyleSchema = schemaID; loadedStyleAppearance = appearance
     }
     schema.close()
   }
@@ -303,6 +311,7 @@ private func notificationHandler(contextObject: UnsafeMutableRawPointer?, sessio
     let state=value.first != "!"
     let optionName=state ? value : String(value.dropFirst())
     guard !optionName.isEmpty else { return }
+    if optionName.first == "_" || optionName == "letter_selection_disabled" { return }
     // Copy notification strings now, then let the current librime operation
     // finish. find_session alone does not prove a schema/engine is ready, and
     // the linked label getter dereferences schema() without a null check.
@@ -322,7 +331,8 @@ private func notificationHandler(contextObject: UnsafeMutableRawPointer?, sessio
             let eqIndex = messageValue.firstIndex(of: "="), messageValue.first == "_" {
     let key = String(messageValue[..<eqIndex])
     let value = String(messageValue[messageValue.index(after: eqIndex)...])
-    Task.detached { @MainActor in
+    if key.hasPrefix("_letter_selection_") { return }
+    DispatchQueue.main.async {
       do {
         try delegate.panel?.inputController?.handleReservedProperty(key: key, value: value, for: sessionId)
       } catch {

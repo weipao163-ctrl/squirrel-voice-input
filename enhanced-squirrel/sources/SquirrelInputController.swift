@@ -32,6 +32,16 @@ final class SquirrelInputController: IMKInputController {
   private var chordTimer: Timer?
   private var chordDuration: TimeInterval = 0
   private var currentApp: String = ""
+  // Keep early printable input on this IMK session while Rime is unavailable.
+  // Never let just the prefix escape as application-owned English text.
+  private var startupEvents: [NSEvent] = []
+  private var startupText = ""
+  private var startupClient: IMKTextInput?
+  private var startupTimer: Timer?
+  private var startupStarted: TimeInterval = 0
+  private var startupSource: String?
+  private var applyingSchema = false
+  private var panelRequest: UInt64 = 0
   // BEGIN ENHANCEMENT STATE
   private var physicalKeys = PhysicalKeys()
   private var letterSettings = LetterSettingsBoundary()
@@ -63,14 +73,9 @@ final class SquirrelInputController: IMKInputController {
     // Return true to consume the key event; return false to pass it to the client app.
     var handled = false
 
-    if session == 0 || !rimeAPI.find_session(session) {
-      createSession()
-      if session == 0 {
-        return false
-      }
-    }
-
     self.client ?= sender as? IMKTextInput
+    if !ensureRimeSession() { return deferStartupInput(event) }
+    if !startupEvents.isEmpty { replayStartupInput() }
     if let app = client?.bundleIdentifier(), currentApp != app {
       currentApp = app
       updateAppOptions()
@@ -201,6 +206,8 @@ final class SquirrelInputController: IMKInputController {
   }
 
   override func activateServer(_ sender: Any!) {
+    finishStartupInput(commitRaw: true)
+    panelRequest &+= 1
     enhancementInvalidated()
     inputGeneration &+= 1
     self.client ?= sender as? IMKTextInput
@@ -239,10 +246,11 @@ final class SquirrelInputController: IMKInputController {
       lastModifiers.remove(.capsLock)
     }
     preedit = ""
+    _ = ensureRimeSession()
     applyInputScriptMode()
     if session != 0 {
       let state = rimeAPI.get_option(session, "ascii_mode")
-      let label = rimeAPI.get_state_label_abbreviated(session, "ascii_mode", state, true).asString
+      let label = readyRimeOptionLabels(api:rimeAPI,session:session,name:"ascii_mode",state:state)?.short
       NSApp.squirrelAppDelegate.updateStatusIcon(asciiMode: state, schemaLabel: label)
     }
   }
@@ -282,11 +290,13 @@ final class SquirrelInputController: IMKInputController {
   }
 
   override func hidePalettes() {
+    panelRequest &+= 1
     NSApp.squirrelAppDelegate.panel?.hide()
     super.hidePalettes()
   }
 
   override func commitComposition(_ sender: Any!) {
+    if !startupEvents.isEmpty { finishStartupInput(commitRaw: true); return }
     self.client ?= sender as? IMKTextInput
     if session != 0 {
       if let input = rimeAPI.get_input(session) {
@@ -372,6 +382,7 @@ final class SquirrelInputController: IMKInputController {
   }
 
   deinit {
+    startupTimer?.invalidate()
     for observer in enhancementObservers { NotificationCenter.default.removeObserver(observer) }
     EnhancementDeployment.shared.controllers.remove(self)
     enhancementInvalidated()
@@ -444,6 +455,120 @@ private extension SquirrelInputController {
 
     if session != 0 {
       updateAppOptions()
+      primeRimeSession()
+    }
+  }
+
+  private func ensureRimeSession() -> Bool {
+    guard !rimeAPI.is_maintenance_mode() else { return false }
+    if session == 0 || !rimeAPI.find_session(session) { createSession() }
+    guard session != 0, rimeAPI.find_session(session) else { return false }
+    if schemaId.isEmpty { primeRimeSession() }
+    if schemaId.isEmpty { destroySession(); return false }
+    return !schemaId.isEmpty && schemaId.first != "."
+  }
+
+  // Runtime switches, inline behavior and appearance must precede the FIRST key.
+  private func primeRimeSession() {
+    var status = RimeStatus_stdbool.rimeStructInit()
+    guard rimeAPI.get_status(session, &status) else { return }
+    defer { _ = rimeAPI.free_status(&status) }
+    if let id = status.schema_id { applyRimeSchema(String(cString: id)) }
+  }
+
+  private func applyRimeSchema(_ id: String) {
+    guard !id.isEmpty, id.first != ".", schemaId != id else { return }
+    enhancementInvalidated()
+    schemaId = id; appliedScriptMode = ""
+    applyInputScriptMode()
+    applyingSchema = true
+    defer { applyingSchema = false }
+    enhancementConfigurationChanged(EnhancementBridge.shared.settings)
+    NSApp.squirrelAppDelegate.loadSettings(for: schemaId)
+    if let panel = NSApp.squirrelAppDelegate.panel {
+      inlinePreedit = (panel.inlinePreedit && !rimeAPI.get_option(session, "no_inline")) || rimeAPI.get_option(session, "inline")
+      inlineCandidate = panel.inlineCandidate && !rimeAPI.get_option(session, "no_inline")
+      rimeAPI.set_option(session, "soft_cursor", !inlinePreedit)
+    }
+  }
+
+  private func deferStartupInput(_ event: NSEvent) -> Bool {
+    guard event.type == .keyDown, let client else { return false }
+    guard !event.modifierFlags.contains(.command), !event.modifierFlags.contains(.control),
+          !event.modifierFlags.contains(.option), !IsSecureEventInputEnabled() else {
+      finishStartupInput(commitRaw: true); return false
+    }
+    if !startupEvents.isEmpty && event.keyCode == 53 {
+      finishStartupInput(commitRaw: false); return true
+    }
+    if !startupEvents.isEmpty && event.keyCode == 51 {
+      startupEvents.removeLast(); startupText = startupEvents.compactMap(\.characters).joined()
+      show(preedit: startupText, selRange: NSRange(location: 0, length: startupText.utf16.count), caretPos: startupText.utf16.count)
+      if startupEvents.isEmpty { finishStartupInput(commitRaw: false) }
+      return true
+    }
+    // Shortcuts, navigation, Enter and Space keep their normal application
+    // semantics. Never replay a delayed send/command into another input target.
+    guard let text = event.characters, !text.isEmpty,
+          text.utf8.allSatisfy({ (33...126).contains($0) }) else {
+      finishStartupInput(commitRaw: true); return false
+    }
+    if startupEvents.count >= 128 {
+      finishStartupInput(commitRaw: true)
+      EnhancementPreview.shared.notice("输入方案尚未就绪，本段已按原文保留。请稍后重试或重新部署。")
+    }
+    if startupEvents.isEmpty {
+      startupClient = client; startupStarted = ProcessInfo.processInfo.systemUptime
+      startupSource = SquirrelInstaller.currentInputSourceID()
+      // The app's source-switch fallback must also see startup marked text,
+      // even though Rime has not produced a candidate-panel request yet.
+      NSApp.squirrelAppDelegate.panel?.inputController = self
+      startupTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { [weak self] _ in
+        guard let self else { return }
+        if IsSecureEventInputEnabled() {
+          // The original marked text belongs to the host; never redirect it to
+          // a newly-secure field or write it through a delayed insertion.
+          self.clearStartupInput(); return
+        }
+        if SquirrelInstaller.currentInputSourceID() != self.startupSource {
+          self.finishStartupInput(commitRaw: true); return
+        }
+        if self.ensureRimeSession() { self.replayStartupInput() }
+        else if ProcessInfo.processInfo.systemUptime - self.startupStarted >= 5 {
+          self.finishStartupInput(commitRaw: true)
+          EnhancementPreview.shared.notice("输入方案暂未就绪，本段已按原文保留。请稍后重试或重新部署；没有丢弃开头输入。")
+        }
+      }
+    }
+    startupEvents.append(event); startupText += text
+    show(preedit: startupText, selRange: NSRange(location: 0, length: startupText.utf16.count), caretPos: startupText.utf16.count)
+    return true
+  }
+
+  private func clearStartupInput() {
+    startupTimer?.invalidate(); startupTimer = nil
+    startupEvents.removeAll(keepingCapacity: true); startupText = ""; startupClient = nil; startupSource = nil
+    preedit = ""
+  }
+
+  private func finishStartupInput(commitRaw: Bool) {
+    guard let target = startupClient else { return }
+    let text = startupText
+    clearStartupInput()
+    guard !IsSecureEventInputEnabled() else { return }
+    if commitRaw && !text.isEmpty { target.insertText(text, replacementRange: .empty) }
+    else { target.setMarkedText("", selectionRange: NSRange(location: 0, length: 0), replacementRange: .empty) }
+  }
+
+  private func replayStartupInput() {
+    guard let target = startupClient, !startupEvents.isEmpty, !IsSecureEventInputEnabled() else { return }
+    let events = startupEvents
+    clearStartupInput()
+    for event in events {
+      if !handle(event, client: target), let text = event.characters, !text.isEmpty {
+        // Explicit ASCII mode remains literal; only printable keys are queued.
+        target.insertText(text, replacementRange: .empty)
+      }
     }
   }
 
@@ -543,19 +668,7 @@ private extension SquirrelInputController {
     var status = RimeStatus_stdbool.rimeStructInit()
     if rimeAPI.get_status(session, &status) {
       // swiftlint:disable:next identifier_name
-      if let schema_id = status.schema_id, schemaId == "" || schemaId != String(cString: schema_id) {
-        enhancementInvalidated()
-        schemaId = String(cString: schema_id)
-        appliedScriptMode = ""
-        applyInputScriptMode()
-        enhancementConfigurationChanged(EnhancementBridge.shared.settings)
-        NSApp.squirrelAppDelegate.loadSettings(for: schemaId)
-        if let panel = NSApp.squirrelAppDelegate.panel {
-          inlinePreedit = (panel.inlinePreedit && !rimeAPI.get_option(session, "no_inline")) || rimeAPI.get_option(session, "inline")
-          inlineCandidate = panel.inlineCandidate && !rimeAPI.get_option(session, "no_inline")
-          rimeAPI.set_option(session, "soft_cursor", !inlinePreedit)
-        }
-      }
+      if let schema_id = status.schema_id { applyRimeSchema(String(cString: schema_id)) }
       _ = rimeAPI.free_status(&status)
     }
 
@@ -711,11 +824,24 @@ private extension SquirrelInputController {
 
   // swiftlint:disable:next function_parameter_count
   func showPanel(preedit: String, selRange: NSRange, caretPos: Int, candidates: [String], comments: [String], labels: [String], highlighted: Int, page: Int, lastPage: Bool) {
-    guard let client = client else { return }
-    let inputPos = KeyboardInputPosition.caret(client:client) ?? .zero
-    if let panel = NSApp.squirrelAppDelegate.panel {
-      panel.position = inputPos
+    guard client != nil, let panel = NSApp.squirrelAppDelegate.panel else { return }
+    panelRequest &+= 1
+    let request = panelRequest
+    if candidates.isEmpty && preedit.isEmpty {
       panel.inputController = self
+      panel.update(preedit: preedit, selRange: selRange, caretPos: caretPos, candidates: candidates, comments: comments, labels: labels,
+                   highlighted: highlighted, page: page, lastPage: lastPage, update: true)
+      return // No visible candidate/preedit: no host geometry IPC is needed.
+    }
+    // Let the host finish its key callback before asking it for geometry. Keep
+    // only the newest request; commit, blur and source changes revoke old work.
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.panelRequest == request, EnhancementBridge.shared.input === self,
+            let client = self.client else { return }
+      let inputPos = KeyboardInputPosition.caret(client: client) ?? .zero
+      guard self.panelRequest == request, self.client != nil,
+            EnhancementBridge.shared.input === self else { return } // Host calls may reenter IMK.
+      panel.position = inputPos; panel.inputController = self
       panel.update(preedit: preedit, selRange: selRange, caretPos: caretPos, candidates: candidates, comments: comments, labels: labels,
                    highlighted: highlighted, page: page, lastPage: lastPage, update: true)
     }
@@ -753,9 +879,19 @@ extension SquirrelInputController: EnhancementInput {
   }
 
   private func enhancementProperty(_ name:String) -> String {
-    var buffer = [CChar](repeating:0,count:256)
-    guard session != 0, rimeAPI.get_property(session,name,&buffer,buffer.count) else { return "" }
-    return String(cString:buffer)
+    guard session != 0 else { return "" }
+    // Rime uses strncpy without a trailing NUL when the value fills the buffer.
+    // Grow for long literal preedit; never scan outside our allocated memory.
+    var capacity = 256
+    while true {
+      var buffer = [CChar](repeating: 0, count: capacity)
+      guard rimeAPI.get_property(session, name, &buffer, buffer.count) else { return "" }
+      if buffer[capacity - 1] == 0 || capacity == 65_536 {
+        buffer[capacity - 1] = 0
+        return String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+      }
+      capacity *= 4
+    }
   }
   private func enhancementComposing() -> Bool {
     guard session != 0, let input = rimeAPI.get_input(session) else { return false }
@@ -783,7 +919,8 @@ extension SquirrelInputController: EnhancementInput {
     }
     let candidateBinding = binding?.codes.contains(code) == true
     let settings = EnhancementBridge.shared.settings
-    let canStart = settings.voice.enabled && EnhancementBridge.shared.connected &&
+    let canStart = candidateBinding && down && !(event.type == .keyDown && event.isARepeat) &&
+      settings.voice.enabled && EnhancementBridge.shared.connected &&
       (voiceIdentity == nil || voiceTerminal) && !enhancementComposing() && client != nil &&
       AXIsProcessTrusted() && !IsSecureEventInputEnabled()
     let action = physicalKeys.event(code:code,down:down,repeated:event.type == .keyDown && event.isARepeat,
@@ -997,7 +1134,7 @@ extension SquirrelInputController: EnhancementInput {
       rimeAPI.set_property(session,"_letter_selection_runtime_revision",String(update.revision))
     }
     rimeAPI.set_property(session,"_letter_selection_reset",UUID().uuidString)
-    if !enhancementComposing() { NSApp.squirrelAppDelegate.loadSettings(for:schemaId) }
+    if !applyingSchema && !enhancementComposing() { NSApp.squirrelAppDelegate.loadSettings(for:schemaId) }
   }
   func voiceReceived(_ value:VoiceUpdate) {
     guard voiceIdentity == value.identity, !voiceTerminal else { return }
