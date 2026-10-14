@@ -14,7 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--baseline', action='store_true')
+    parser.add_argument('--label', help='Separate evidence filename for a controlled performance comparison')
+    parser.add_argument('--controller-source', type=Path, help='Preserved production controller for a baseline comparison')
     args = parser.parse_args()
+    if args.label and (not args.label.replace('-', '').replace('_', '').isalnum()):
+        parser.error('label must contain only letters, digits, hyphens or underscores')
     project = ROOT / 'enhanced-squirrel'
     build = project / 'build'
     work = Path(tempfile.mkdtemp(prefix='keyboard-input-', dir=build))
@@ -22,6 +26,11 @@ def main():
     bins = build / 'swift-clt/arm64-apple-macosx/debug'
     sources = sorted(p for p in (project / 'sources').glob('*.swift')
                      if p.name not in {'Main.swift', 'EnhancementBridge.swift'})
+    if args.controller_source:
+        controller = args.controller_source.resolve(strict=True)
+        if controller.name != 'SquirrelInputController.swift':
+            parser.error('controller-source must be a preserved SquirrelInputController.swift')
+        sources = [controller if p.name == controller.name else p for p in sources]
     sources.append(ROOT / 'tools/NativeKeyboardInputProbe.swift')
     objects = sorted(p for module in ['EnhancementCore', 'EnhancementIPC', 'EnhancementUI']
                      for p in (bins / (module + '.build')).glob('*.swift.o'))
@@ -38,7 +47,8 @@ def main():
     bridge = work / 'KeyboardProbe-Bridging.h'
     bridge.write_text('#import "' + str(project / 'sources/Squirrel-Bridging-Header.h') + '"\n'
                       '#import <Foundation/Foundation.h>\n'
-                      'id _Nonnull KeyboardProbeWrapClient(id _Nonnull client);\n')
+                      'id _Nonnull KeyboardProbeWrapClient(id _Nonnull client);\n'
+                      'NSDictionary<NSString *, NSNumber *> * _Nonnull KeyboardProbeProcessMetrics(void);\n')
     proxy_object = work / 'KeyboardProbeClient.o'
     proxy_compile = subprocess.run(['xcrun', 'clang', '-fobjc-arc', '-isysroot', sdk,
                                     '-c', str(ROOT / 'tools/NativeKeyboardProbeClient.m'), '-o', str(proxy_object)],
@@ -54,7 +64,7 @@ def main():
                '-o', str(binary)]
     if not args.baseline:
         command.insert(2, '-O')
-    name = 'macos-keyboard-input-baseline' if args.baseline else 'macos-keyboard-input'
+    name = args.label or ('macos-keyboard-input-baseline' if args.baseline else 'macos-keyboard-input')
     evidence = ROOT / 'evidence'
     evidence.mkdir(exist_ok=True)
     compile = subprocess.run(command, capture_output=True, text=True, timeout=120)
@@ -71,7 +81,7 @@ def main():
     report = json.loads(run.stdout.split(marker)[-1].strip())
     report.update(utc=datetime.now(timezone.utc).isoformat(), exit_code=run.returncode,
                   optimization='default' if args.baseline else '-O', compile_command=command,
-                  work=str(work), source_sha256={str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
+                  work=str(work), source_sha256={str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else 'external-controller-baseline': hashlib.sha256(p.read_bytes()).hexdigest()
                                                 for p in [*sources, ROOT / 'tools/NativeKeyboardProbeClient.m', Path(__file__)]})
     (evidence / (name + '.json')).write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps({k: report[k] for k in ['status', 'checks', 'metrics']}, ensure_ascii=False, indent=2))

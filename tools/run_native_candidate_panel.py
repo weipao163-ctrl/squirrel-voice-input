@@ -24,8 +24,9 @@ def main():
     library = project/'build/CLT/SquirrelEnhancedDev.app/Contents/Frameworks/librime.1.dylib'
     objects = sorted((bins/'EnhancementCore.build').glob('*.swift.o'))
     assert objects
+    sdk = json.loads((project/'build/evidence/clt-build-complete.json').read_text())['sdk']
     argv = ['xcrun','swiftc','-swift-version','5','-enable-bare-slash-regex',
-        '-sdk',subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip(),
+        '-sdk',sdk,
         '-I', str(bins/'Modules'), '-I', str(project/'librime/src'), '-I', str(project/'librime/include'),
         '-import-objc-header',str(project/'Sources/Squirrel-Bridging-Header.h'),
         *map(str,sources),*map(str,objects),str(library),'-Xlinker','-rpath','-Xlinker',str(library.parent),

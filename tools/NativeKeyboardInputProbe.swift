@@ -2,6 +2,13 @@ import AppKit
 import InputMethodKit
 import EnhancementCore
 import EnhancementIPC
+import Carbon
+
+// These clients are local objects with no connection to a real text field.
+// Exercise BOTH security states deterministically without toggling macOS secure
+// input. This symbol exists only in the test executable, never in the app build.
+private enum KeyboardProbeSecurity { static var secure = false }
+func IsSecureEventInputEnabled() -> Bool { KeyboardProbeSecurity.secure }
 
 // Compile the real controller, panel and Rime calls against an in-memory IMK
 // client. Only transport/startup paths are stubbed: no live app, Keychain or mic.
@@ -31,7 +38,9 @@ enum SquirrelApp {
 final class KeyboardProbeClient: NSObject, IMKTextInput {
   var committed = "", marked = "", fallback = ""
   var geometryQueries = 0, rangeQueries = 0
+  var bundleQueries = 0
   var queryDelay: TimeInterval = 0
+  var bundleQueryDelay: TimeInterval = 0
   var bundle = "org.rime.KeyboardProbeClient"
   var onGeometry: (() -> Void)?
   lazy var proxy: Any = KeyboardProbeWrapClient(self)
@@ -57,7 +66,11 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
   func overrideKeyboard(withKeyboardNamed name: String!) {}
   func selectMode(_ modeIdentifier: String!) {}
   func supportsUnicode() -> Bool { true }
-  func bundleIdentifier() -> String! { bundle }
+  func bundleIdentifier() -> String! {
+    bundleQueries += 1
+    if bundleQueryDelay > 0 { Thread.sleep(forTimeInterval: bundleQueryDelay) }
+    return bundle
+  }
   func windowLevel() -> CGWindowLevel { 0 }
   func supportsProperty(_ property: TSMDocumentPropertyTag) -> Bool { false }
   func uniqueClientIdentifierString() -> String! { "keyboard-probe-client" }
@@ -67,6 +80,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
 
 @main enum NativeKeyboardInputProbe {
   static func main() throws {
+    let secureInputAtStart = Carbon.IsSecureEventInputEnabled()
     let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
     let resource = URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
     let files = FileManager.default, api = rime_get_api_stdbool().pointee
@@ -102,7 +116,10 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
       bundleIdentifier: Bundle.main.bundleIdentifier)
     var checks: [[String: Any]] = [], metrics: [String: Any] = [:]
     func check(_ name: String, _ pass: Bool) { checks.append(["name": name, "passed": pass]) }
-    func pump(_ duration: TimeInterval = 0.08) { RunLoop.main.run(until: Date(timeIntervalSinceNow: duration)) }
+    func pump(_ duration: TimeInterval = 0.08) {
+      // CLI fixtures need the autorelease boundary provided by an app event loop.
+      autoreleasepool { RunLoop.main.run(until: Date(timeIntervalSinceNow: duration)) }
+    }
     func event(_ text: String, code: UInt16 = 0, modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
       NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
         timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0, context: nil,
@@ -275,9 +292,116 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     check("one_hundred_fresh_controllers_keep_first_key_in_pinyin", coldPasses == 100)
     metrics["fresh_controller_and_first_key_p50_ms"] = coldTimes[50]
     metrics["fresh_controller_and_first_key_p95_ms"] = coldTimes[95]
+    do {
+      api.finalize(); KeyboardProbeSecurity.secure = true
+      let client = KeyboardProbeClient()
+      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      controller.activateServer(client.proxy)
+      _ = send(controller, client, "n"); _ = send(controller, client, "i")
+      check("secure_input_never_buffers_unready_first_keys", client.fallback == "ni" && client.marked.isEmpty)
+      KeyboardProbeSecurity.secure = false; api.initialize(&traits); pump(0.15)
+      check("secure_input_keys_are_never_replayed_later", client.committed.isEmpty && client.marked.isEmpty)
+      controller.deactivateServer(client.proxy)
+    }
+    do {
+      let client = KeyboardProbeClient()
+      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      controller.activateServer(client.proxy)
+      func release(_ text: String, _ code: UInt16) {
+        let up = NSEvent.keyEvent(with: .keyUp, location: .zero, modifierFlags: [],
+          timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0, context: nil,
+          characters: text, charactersIgnoringModifiers: text, isARepeat: false, keyCode: code)!
+        _ = controller.handle(up, client: client.proxy)
+      }
+      func word(_ times: inout [Double]) {
+        for (text, code) in [("n", UInt16(45)), ("i", 34), ("h", 4), ("a", 0), ("o", 31), ("\u{1b}", 53)] {
+          let start = ProcessInfo.processInfo.systemUptime
+          _ = send(controller, client, text, code: code)
+          times.append((ProcessInfo.processInfo.systemUptime - start) * 1000)
+          release(text, code)
+        }
+      }
+      var times: [Double] = []
+      client.bundleQueries = 0; client.bundleQueryDelay = 0.002
+      let slowStart = ProcessInfo.processInfo.systemUptime
+      for _ in 0..<20 { autoreleasepool { word(&times) } }
+      metrics["slow_metadata_240_events_wall_ms"] = (ProcessInfo.processInfo.systemUptime - slowStart) * 1000
+      metrics["slow_metadata_240_events_bundle_queries"] = client.bundleQueries
+      check("ordinary_down_and_up_events_reuse_client_metadata", client.bundleQueries == 0)
+      client.bundleQueryDelay = 0
+      for _ in 0..<100 { autoreleasepool { word(&times) } }
+      pump(0.01)
+      let before = KeyboardProbeProcessMetrics().mapValues { $0.doubleValue }
+      var memory: [[String: Double]] = [before]
+      times.removeAll(keepingCapacity: true)
+      let stressStart = ProcessInfo.processInfo.systemUptime
+      for index in 0..<2000 {
+        autoreleasepool { word(&times) }
+        if index % 100 == 99 {
+          pump(0.001)
+          memory.append(KeyboardProbeProcessMetrics().mapValues { $0.doubleValue })
+        }
+      }
+      let after = KeyboardProbeProcessMetrics().mapValues { $0.doubleValue }
+      let cpu = after["cpu_seconds"]! - before["cpu_seconds"]!
+      times.sort()
+      metrics["sustained_typing"] = [
+        "key_downs": 12000, "key_ups": 12000,
+        "cpu_seconds": cpu,
+        "wall_seconds": ProcessInfo.processInfo.systemUptime - stressStart,
+        "key_down_p50_ms": times[times.count / 2],
+        "key_down_p95_ms": times[times.count * 95 / 100],
+        "cpu_ms_per_key_pair": cpu * 1000 / 12000,
+        "physical_footprint_before_bytes": before["physical_footprint_bytes"]!,
+        "physical_footprint_after_bytes": after["physical_footprint_bytes"]!,
+        "physical_footprint_max_bytes": memory.map { $0["physical_footprint_bytes"]! }.max()!,
+        "memory_samples": memory
+      ] as [String: Any]
+      check("sustained_typing_keeps_all_text_uncommitted_until_cancel", client.committed.isEmpty && client.fallback.isEmpty && client.marked.isEmpty)
+      check("sustained_typing_memory_counters_are_available", memory.allSatisfy { $0["memory_counter_status"] == 0 })
+      check("sustained_typing_footprint_is_bounded_after_warmup", after["physical_footprint_bytes"]! - before["physical_footprint_bytes"]! < 32 * 1024 * 1024)
+      // A different client, including the Helper, must not inherit the old ID.
+      let helper = KeyboardProbeClient(); helper.bundle = "org.rime.SquirrelEnhanced.Development.VoiceHelper"
+      let handled = controller.handle(event("x"), client: helper.proxy)
+      check("different_client_still_queries_its_own_identity", helper.bundleQueries > 0 && !handled && helper.marked.isEmpty)
+      controller.deactivateServer(client.proxy)
+      let oldQueries = client.bundleQueries
+      controller.activateServer(client.proxy)
+      check("activation_refreshes_client_metadata_once", client.bundleQueries == oldQueries + 1)
+      let activatedQueries = client.bundleQueries
+      _ = send(controller, client, "n", code: 45)
+      check("first_key_after_activation_uses_fresh_cached_identity", client.bundleQueries == activatedQueries && client.marked == "n")
+      _ = send(controller, client, "\u{1b}", code: 53)
+      let switchBefore = KeyboardProbeProcessMetrics().mapValues { $0.doubleValue }
+      var activationSamples: [[String: Double]] = [switchBefore]
+      for index in 0..<500 {
+        autoreleasepool {
+          controller.deactivateServer(client.proxy)
+          controller.activateServer(client.proxy)
+          _ = send(controller, client, "n", code: 45)
+          _ = send(controller, client, "\u{1b}", code: 53)
+        }
+        if index % 50 == 49 {
+          pump(0.001)
+          activationSamples.append(KeyboardProbeProcessMetrics().mapValues { $0.doubleValue })
+        }
+      }
+      pump(0.01)
+      let switchAfter = KeyboardProbeProcessMetrics().mapValues { $0.doubleValue }
+      metrics["five_hundred_reactivations"] = [
+        "physical_footprint_before_bytes": switchBefore["physical_footprint_bytes"]!,
+        "physical_footprint_after_bytes": switchAfter["physical_footprint_bytes"]!,
+        "cpu_seconds": switchAfter["cpu_seconds"]! - switchBefore["cpu_seconds"]!,
+        "memory_samples": activationSamples
+      ] as [String: Any]
+      check("repeated_activation_keeps_memory_bounded", switchAfter["physical_footprint_bytes"]! - switchBefore["physical_footprint_bytes"]! < 32 * 1024 * 1024)
+      controller.deactivateServer(client.proxy)
+    }
     let report: [String: Any] = ["status": checks.allSatisfy { $0["passed"] as? Bool == true } ? "PASS" : "FAIL",
       "checks": checks, "metrics": metrics, "real_rime_version": api.get_version().map { String(cString: $0) } ?? "unknown",
-      "scope": "actual SquirrelInputController and AppKit panel with real librime and an in-memory IMK client; simulated slow host; not physical keyboard or live host IPC",
+      "scope": "actual SquirrelInputController and AppKit panel with real librime, an in-memory IMK client and isolated security-state fixture; simulated slow host; not physical keyboard or live host IPC",
+      "system_secure_input_at_start": secureInputAtStart, "system_secure_input_at_end": Carbon.IsSecureEventInputEnabled(),
+      "security_state_fixture_only": true,
       "microphone_used": false, "cloud_calls": 0, "personal_dictionary_used": false]
     print("KEYBOARD_PROBE_REPORT=" + String(decoding: try JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]), as: UTF8.self))
     delegate.panel?.hide()
