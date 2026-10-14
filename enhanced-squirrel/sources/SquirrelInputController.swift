@@ -15,6 +15,8 @@ final class SquirrelInputController: IMKInputController {
   private static var unknownAppCnt: UInt = 0
 
   private weak var client: IMKTextInput?
+  private weak var applicationClient: IMKTextInput?
+  private var applicationIdentifier: String?
   private let rimeAPI: RimeApi_stdbool = rime_get_api_stdbool().pointee
   private var preedit: String = ""
   private var selRange: NSRange = .empty
@@ -66,7 +68,7 @@ final class SquirrelInputController: IMKInputController {
     guard let event = event else { return false }
     // Configuration fields and the local hotkey recorder belong to the Helper.
     // Routing them through our own IMK handler can consume their key events.
-    guard (sender as? IMKTextInput)?.bundleIdentifier() != Self.settingsBundleID else { return false }
+    guard inputApplicationIdentifier(sender as? IMKTextInput) != Self.settingsBundleID else { return false }
     let modifiers = event.modifierFlags
     let changes = lastModifiers.symmetricDifference(modifiers)
 
@@ -76,7 +78,7 @@ final class SquirrelInputController: IMKInputController {
     self.client ?= sender as? IMKTextInput
     if !ensureRimeSession() { return deferStartupInput(event) }
     if !startupEvents.isEmpty { replayStartupInput() }
-    if let app = client?.bundleIdentifier(), currentApp != app {
+    if let app = inputApplicationIdentifier(client), currentApp != app {
       currentApp = app
       updateAppOptions()
     }
@@ -201,7 +203,7 @@ final class SquirrelInputController: IMKInputController {
   }
 
   override func recognizedEvents(_ sender: Any!) -> Int {
-    if (sender as? IMKTextInput)?.bundleIdentifier() == Self.settingsBundleID { return 0 }
+    if inputApplicationIdentifier(sender as? IMKTextInput) == Self.settingsBundleID { return 0 }
     return Int(NSEvent.EventTypeMask.Element(arrayLiteral: .keyDown, .keyUp, .flagsChanged).rawValue)
   }
 
@@ -211,7 +213,7 @@ final class SquirrelInputController: IMKInputController {
     enhancementInvalidated()
     inputGeneration &+= 1
     self.client ?= sender as? IMKTextInput
-    if client?.bundleIdentifier() == Self.settingsBundleID {
+    if inputApplicationIdentifier(client, refresh: true) == Self.settingsBundleID {
       enhancementInvalidated(); physicalKeys.lostLifecycle(); cleanReleasedPhysicalKeys()
       return
     }
@@ -287,6 +289,7 @@ final class SquirrelInputController: IMKInputController {
     hidePalettes()
     commitComposition(sender)
     client = nil
+    applicationClient = nil; applicationIdentifier = nil
   }
 
   override func hidePalettes() {
@@ -393,6 +396,20 @@ final class SquirrelInputController: IMKInputController {
 
 private extension SquirrelInputController {
 
+  // bundleIdentifier is a synchronous IMK host call. A known app ID belongs to
+  // this exact weak client, not the field contents or a process-wide cache.
+  // Refresh on activation; a different proxy or failed lookup queries anew.
+  func inputApplicationIdentifier(_ candidate: IMKTextInput?, refresh: Bool = false) -> String? {
+    guard let candidate else { return nil }
+    if !refresh, applicationClient === candidate, let applicationIdentifier {
+      return applicationIdentifier
+    }
+    let identifier = candidate.bundleIdentifier()
+    applicationClient = candidate
+    applicationIdentifier = identifier?.isEmpty == false ? identifier : nil
+    return identifier
+  }
+
   func onChordTimer(_: Timer) {
     var processedKeys = false
     if chordKeyCount > 0 && session != 0 {
@@ -442,7 +459,7 @@ private extension SquirrelInputController {
 
   func createSession() {
     enhancementInvalidated(); inputGeneration += 1; cleanReleasedPhysicalKeys()
-    let app = client?.bundleIdentifier() ?? {
+    let app = inputApplicationIdentifier(client) ?? {
       SquirrelInputController.unknownAppCnt &+= 1
       return "UnknownApp\(SquirrelInputController.unknownAppCnt)"
     }()
