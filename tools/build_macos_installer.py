@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 from macos_build_provenance import validate
+from bundle_public_pinyin import verify_bundle
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -32,6 +33,7 @@ def main():
     checks=[command(['codesign','--verify','--deep','--strict',app])]
     helper=app/'Contents/Resources/SquirrelVoiceHelper.app'
     assert sha(app/'Contents/SharedSupport/squirrel.yaml') == sha(project/'resources/EnhancedDefaultSquirrel.yaml')
+    public_pinyin = verify_bundle(app, require_prebuilt=True)
     # Local migration reads user dictionaries only into Library/Application
     # Support. They must never accidentally enter a compiled app or Scripts.
     private_names={'cn_dicts','en_dicts','custom_phrase.txt','sogou_personal.dict.yaml',
@@ -53,7 +55,7 @@ def main():
     home_rejection=command(['/bin/bash',scripts/'pkg-user-install.sh',scripts/app.name,'/not-the-user-home'],check=False)
     assert home_rejection['exit_code']==2
     identifier='org.rime.SquirrelEnhanced.Development.Installer'
-    version='0.1.20261014.3'
+    version='0.1.20261014.4'
     component=stage/'SquirrelVoiceInput.component.pkg'
     # Script-only package avoids Installer overwriting a live input method. The
     # signed app is inside Scripts and installed atomically by the shared tested
@@ -86,6 +88,7 @@ def main():
     assert package_info.find('./scripts/postinstall').attrib['file']=='./postinstall'
     assert package_info.find('./payload') is None
     fresh=fresh_scripts/app.name
+    verify_bundle(fresh, require_prebuilt=True)
     checks.append(command(['codesign','--verify','--deep','--strict',fresh]))
     checks.append(command(['codesign','--verify','--strict','-R',f'=identifier "org.rime.SquirrelEnhanced.Development.VoiceHelper" and certificate leaf = H"{pin}"',fresh/'Contents/Resources/SquirrelVoiceHelper.app']))
     hashes={str(p.relative_to(app)):sha(p) for p in app.rglob('*') if p.is_file()}
@@ -131,6 +134,7 @@ def main():
       'early_rejection_checks':[rejection,home_rejection],'forbidden_private_or_runtime_files':forbidden,
       'application_signing':'local self-signed certificate; both IPC peers pinned to exact certificate/identifier',
       'bundled_default_appearance_matches_resource':True,'local_personal_dictionaries_excluded':True,
+      'bundled_public_pinyin_entries':public_pinyin['dictionary_entries'],
       'installer_developer_id_signed':False,'apple_notarized':False,'installed':False,'input_source_selected':False,'microphone_used':False,'cloud_calls':0,
       'full_goal_complete':False}
     (ROOT/'evidence/macos-installer.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')

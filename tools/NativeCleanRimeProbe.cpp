@@ -67,7 +67,14 @@ int main(int argc,char** argv) {
       std::string text=commit.text ? commit.text : "";api->free_commit(&commit);
       need(text==item.second,"fresh simplified default output mismatch");output+=text;
     }
-    need(fs::is_regular_file(base/"build/luna_pinyin.table.bin"),"fresh dictionary build missing");
+    RimeConfig config{};need(api->schema_open("luna_pinyin", &config), "fresh default schema unavailable");
+    const char* activeDictionary=api->config_get_cstring(&config,"translator/dictionary");
+    const char* learningDictionary=api->config_get_cstring(&config,"translator/user_dict");
+    need(activeDictionary && std::string(activeDictionary)=="squirrel_public_pinyin","public dictionary is not active");
+    need(learningDictionary && std::string(learningDictionary)=="luna_pinyin","learning identity changed");
+    api->config_close(&config);
+    need(fs::is_regular_file(base/"build/squirrel_public_pinyin.table.bin") ||
+         fs::is_regular_file(shared/"build/squirrel_public_pinyin.table.bin"),"fresh public dictionary build missing");
     api->destroy_session(sid);sid=0;api->finalize();api=nullptr;
     std::cout<<"{\"status\":\"PASS\",\"enabled_schemas\":"<<count<<",\"all_enabled_schema_sources_and_selection_verified\":true,\"all_enabled_schemas_have_real_candidates\":true,\"quick5_real_candidates\":true,\"empty_user_directory\":true,\"bundled_default_schema\":\"luna_pinyin\",\"simplified_fixture_output\":\""<<output<<"\",\"microphone_used\":false,\"cloud_calls\":0,\"input_source_registered\":false}\n";
     return 0;

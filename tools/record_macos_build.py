@@ -55,7 +55,7 @@ def main():
        'app':str(app),'sdk':'MacOSX26.5.sdk','swift_language_mode':5,'commands':commands,
        'source_sha256':provenance['source_sha256'],
        'completed_build_provenance':provenance,
-       'binary_sha256':{str(p.relative_to(app)):hashlib.sha256(p.read_bytes()).hexdigest() for p in binary},
+       'binary_sha256':provenance['binary_sha256'],
        'plist':main_plist,'helper_plist':helper_plist,'microphone_usage_and_identity_valid':microphone_metadata,
        'responsible_main_and_helper_audio_entitlements_valid':microphone_entitlements,
        'sparkle_archive_sha256':hashlib.sha256((project/'download/Sparkle-2.6.2.tar.xz').read_bytes()).hexdigest(),

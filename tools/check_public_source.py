@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from bundle_public_pinyin import verify_sources
 
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_PARTS = {
@@ -24,6 +25,9 @@ PUBLIC_DICTIONARIES = {
     'enhanced-squirrel/resources/LetterProbe/letter_fixture.dict.yaml',
     'enhanced-squirrel/resources/Quick5/quick5.dict.yaml',
     'enhanced-squirrel/resources/Quick5/quick5.supplement.dict.yaml',
+    'enhanced-squirrel/resources/PublicPinyin/squirrel_public_pinyin.dict.yaml',
+    *('enhanced-squirrel/resources/PublicPinyin/dictionaries/' + n + '.dict.yaml'
+      for n in ['8105', 'base', 'ext', 'tencent', 'others']),
 }
 PRIVATE_NAMES = {'settings.json', 'user.yaml', 'installation.yaml',
                  'custom_phrase.txt', '.DS_Store', 'SHA256SUMS.json',
@@ -78,7 +82,8 @@ def main():
         if entries is None and not path.is_file():
             failures.append((str(rel), 'missing-file')); continue
         data = read(path)
-        if len(data) > 5 * 1024 * 1024:
+        # Only hash-pinned public corpora may exceed the normal source limit.
+        if len(data) > (20 if rel.as_posix() in PUBLIC_DICTIONARIES else 5) * 1024 * 1024:
             failures.append((str(rel), 'unexpected-large-file'))
         if data[:4] in {b'\xcf\xfa\xed\xfe', b'\xfe\xed\xfa\xcf', b'\xca\xfe\xba\xbe', b'\x7fELF'} or data[:2] == b'MZ':
             failures.append((str(rel), 'compiled-binary'))
@@ -99,6 +104,10 @@ def main():
                 failures.append((str((public/name).relative_to(ROOT)), 'public-resource-source-mismatch'))
     except (OSError, KeyError, ValueError, subprocess.CalledProcessError):
         failures.append(('enhanced-squirrel/resources/Quick5', 'missing-or-invalid-public-resource-provenance'))
+    try:
+        verify_sources(ROOT, read)
+    except (OSError, KeyError, ValueError, AssertionError, subprocess.CalledProcessError):
+        failures.append(('enhanced-squirrel/resources/PublicPinyin', 'missing-or-invalid-public-resource-provenance'))
     print(json.dumps({'status': 'FAIL' if failures else 'PASS',
                       'source_files_checked': len(paths),
                       'violations_paths_and_rules_only': failures}, ensure_ascii=False))
