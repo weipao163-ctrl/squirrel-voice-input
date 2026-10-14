@@ -686,7 +686,7 @@ EE0000000000000000000033 = {isa = XCSwiftPackageProductDependency; package = EE0
 				CODE_SIGN_ENTITLEMENTS = resources/Squirrel.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 0.1.20;
+				CURRENT_PROJECT_VERSION = 0.1.31;
 				DEAD_CODE_STRIPPING = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -742,7 +742,7 @@ EE0000000000000000000033 = {isa = XCSwiftPackageProductDependency; package = EE0
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = resources/Squirrel.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 0.1.20;
+				CURRENT_PROJECT_VERSION = 0.1.31;
 				DEAD_CODE_STRIPPING = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
