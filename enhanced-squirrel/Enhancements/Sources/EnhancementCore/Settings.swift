@@ -212,9 +212,19 @@ public struct VoiceSettings: Codable, Equatable {
 public struct Settings: Codable, Equatable {
   public var version = 1
   public var revision: UInt64 = 0
-  public var letters: [String: LetterProfile] = [:]
+  // Only a missing settings file uses these defaults. Codable keeps existing
+  // saved dictionaries (including an empty one or explicit disabled profiles).
+  public var letters: [String: LetterProfile] = Self.defaultLetters
   public var voice = VoiceSettings()
   public init() {}
+  public static var defaultLetters: [String: LetterProfile] {
+    var profile = LetterProfile()
+    profile.enabled = true
+    return ["luna_pinyin": profile]
+  }
+  public static var disabledFallback: Settings {
+    var value = Settings(); value.letters = [:]; return value
+  }
   public func validate() throws {
     guard version == 1 else { throw SettingsError.invalid("不支持的配置版本；保留原文件，不覆盖。") }
     for (schema, profile) in letters {
