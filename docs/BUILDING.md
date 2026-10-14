@@ -72,6 +72,8 @@ python3 tools/build_macos_installer.py
 
 打包入口要求来源绑定的构建与 IPC 报告，重新解开实际候选包核对文件、签名，并在空白用户数据中运行字母与全部默认方案检查。公开包还需检查个人词库、设置、凭据、私钥、录音和本机路径；本机完整报告不能直接作为公开发布附件。
 
+0.1.28 的公开增强拼音源词表已固定在 `enhanced-squirrel/resources/PublicPinyin`，来源与每文件哈希见 `UPSTREAM.json`。两条构建路径均在签名前验证并打包声明文件，在新建隔离数据目录预编译该词表的 table/prism/reverse 三个文件。生成物的来源哈希及文件哈希保存在包内 `Resources/Licenses/PublicPinyin-PREBUILT.json`，不读取或复制开发机器的个人词库。可运行 `tools/run_public_pinyin_probe.py --shared <App的SharedSupport绝对路径> --library <App的librime绝对路径>` 复验；测试仅创建隔离目录。
+
 ## 自行安装
 
 ```bash
