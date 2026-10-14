@@ -21,7 +21,8 @@ def input_hashes():
                *[PROJECT/'resources'/n for n in ['Localizable.xcstrings','InfoPlist.xcstrings','Squirrel.entitlements','Info.plist','letter_selection.lua','EnhancedDefaultSquirrel.yaml']],
                *sorted(p for p in (PROJECT/'resources/Quick5').glob('*') if p.is_file()),
                *sorted(p for p in (PROJECT/'resources/PublicPinyin').rglob('*') if p.is_file()),
-               ROOT/'tools/bundle_public_pinyin.py', ROOT/'tools/prebuild_public_pinyin.py', ROOT/'tools/NativeCleanRimeProbe.cpp',
+               *sorted(p for p in (PROJECT/'resources/DefaultLetterSelection').glob('*') if p.is_file()),
+               ROOT/'tools/bundle_default_letters.py', ROOT/'tools/bundle_public_pinyin.py', ROOT/'tools/prebuild_public_pinyin.py', ROOT/'tools/NativeCleanRimeProbe.cpp',
                Path(__file__).resolve(), ROOT/'tools/record_macos_build.py']
     return {str(p.relative_to(ROOT)):digest(p) for p in sources}
 

@@ -51,6 +51,7 @@ def worker(args):
     sid = r.create_session()
     assert sid and r.select_schema(sid, b'luna_pinyin')
     r.set_option(sid, b'ascii_mode', False)
+    r.set_option(sid, b'letter_selection_disabled', True)
     r.set_option(sid, b'zh_hans', True)
     r.set_option(sid, b'zh_hant', False)
     rows = []
@@ -82,14 +83,10 @@ def worker(args):
         r.set_option(sid, b'zh_hans', True); r.set_option(sid, b'zh_hant', False)
         # Run the same production Lua processor against the real large dictionary.
         r.destroy_session(sid)
-        shutil.copyfile(ROOT / 'lua/letter_selection.lua', args.user / 'lua/letter_selection.lua')
-        (args.user / 'luna_pinyin.custom.yaml').write_text('''patch:
-  engine/processors/@before 0: lua_processor@*letter_selection
-  menu/page_size: 9
-  letter_selection/keys: asdfghjkl
-  letter_selection/hide_candidates: true
-''')
-        assert r.deploy_schema(str(args.shared / 'luna_pinyin.schema.yaml').encode())
+        # The release already supplies the production processor and shared Lua.
+        # A first session must work without generating a user patch or copying Lua.
+        check('default_processor_already_loaded', r.processors('luna_pinyin')[0] == 'lua_processor@*letter_selection')
+        check('no_manual_user_patch', not (args.user / 'luna_pinyin.custom.yaml').exists())
         sid = r.create_session(); assert r.select_schema(sid, b'luna_pinyin')
         r.set_option(sid, b'ascii_mode', False); r.set_option(sid, b'zh_hans', True)
         r.set_option(sid, b'zh_hant', False)

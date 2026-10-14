@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 from macos_build_provenance import validate
+from bundle_default_letters import verify_bundle as verify_default_letters
 from bundle_public_pinyin import verify_bundle
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -55,7 +56,7 @@ def main():
     home_rejection=command(['/bin/bash',scripts/'pkg-user-install.sh',scripts/app.name,'/not-the-user-home'],check=False)
     assert home_rejection['exit_code']==2
     identifier='org.rime.SquirrelEnhanced.Development.Installer'
-    version='0.1.20261014.4'
+    version='0.1.20261014.31'
     component=stage/'SquirrelVoiceInput.component.pkg'
     # Script-only package avoids Installer overwriting a live input method. The
     # signed app is inside Scripts and installed atomically by the shared tested
@@ -89,6 +90,7 @@ def main():
     assert package_info.find('./payload') is None
     fresh=fresh_scripts/app.name
     verify_bundle(fresh, require_prebuilt=True)
+    verify_default_letters(fresh)
     checks.append(command(['codesign','--verify','--deep','--strict',fresh]))
     checks.append(command(['codesign','--verify','--strict','-R',f'=identifier "org.rime.SquirrelEnhanced.Development.VoiceHelper" and certificate leaf = H"{pin}"',fresh/'Contents/Resources/SquirrelVoiceHelper.app']))
     hashes={str(p.relative_to(app)):sha(p) for p in app.rglob('*') if p.is_file()}
@@ -111,6 +113,8 @@ def main():
     checks.append(clean_result)
     clean_probe=json.loads(clean_result['stdout'])
     assert clean_probe['status']=='PASS' and clean_probe['enabled_schemas']==6
+    assert clean_probe['default_letter_selection_verified']
+    assert clean_probe['default_letter_selection_no_manual_deployment']
     assert clean_probe['all_enabled_schema_sources_and_selection_verified']
     assert clean_probe['all_enabled_schemas_have_real_candidates']
     assert clean_probe['quick5_real_candidates'] and clean_probe['simplified_fixture_output']=='中国测试'
