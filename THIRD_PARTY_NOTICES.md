@@ -11,6 +11,8 @@
 | X11 键定义头文件 | 各文件内保留原 X.Org / X Consortium 声明 |
 | Plum 配方工具 | [rime/plum](https://github.com/rime/plum)，LGPL-3.0；见 `enhanced-squirrel/plum/LICENSE`，GPL 完整文本亦在根 LICENSE |
 | 默认 Quick5 资源 | [rime/rime-quick](https://github.com/rime/rime-quick)，提交 `5dcdb9e353d314239e9c8cddc0f42d52da4837bb`；LGPL-3.0，LICENSE / AUTHORS / GPL-3.0.txt / UPSTREAM.json 保留在资源目录 |
+| 公开增强拼音词库 | [iDvel/rime-ice](https://github.com/iDvel/rime-ice/tree/da1fbe602e38f26db846fa10120ee64c2b0324c0)，提交 `da1fbe602e38f26db846fa10120ee64c2b0324c0`；GPL-3.0-only，五张原始公开词表、来源注释、LICENSE 与 UPSTREAM.json 见 `resources/PublicPinyin`。腾讯词表原始数据来自 Tencent AI Lab；保留文件内原始来源及校订声明 |
+| 公开词库的朙月拼音方案 | [rime/rime-luna-pinyin](https://github.com/rime/rime-luna-pinyin/tree/56b934b099dfbeab842320f13aa8b461a6ab3e42)，提交 `56b934b099dfbeab842320f13aa8b461a6ab3e42`；LGPL-3.0，修改默认词典与简繁过滤器，LICENSE / AUTHORS 保留 |
 | Sparkle 构建依赖 | [sparkle-project/Sparkle](https://github.com/sparkle-project/Sparkle) 2.6.2；许可见 `enhanced-squirrel/third-party/Sparkle-LICENSE.txt` |
 
 Git 代码区不包含第三方预编译运行库。Releases 的安装包包含运行所需的 librime、插件、OpenCC、Sparkle 与公开默认词库，程序的 Resources/Licenses 和 SharedSupport 目录保留对应许可证与作者声明。构建时使用的签名工具不随安装包分发。开发者再次分发构建产物时须保留对应声明并检查其来源。
