@@ -1,0 +1,8 @@
+# Defaults for the bundled pinyin only. User custom files take precedence.
+patch:
+  engine/processors/@before 0: lua_processor@*letter_selection
+  menu/page_size: 9
+  letter_selection/enabled: true
+  letter_selection/keys: asdfghjkl
+  letter_selection/hide_candidates: true
+  squirrel_enhanced/default_letter_selection: true
