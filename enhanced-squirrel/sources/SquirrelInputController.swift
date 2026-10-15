@@ -45,6 +45,13 @@ final class SquirrelInputController: IMKInputController {
   private var applyingSchema = false
   private var panelRequest: UInt64 = 0
   private var panelPositionWork: DispatchWorkItem?
+  private var panelRetryWork: DispatchWorkItem?
+  private var panelPresentation: ((SquirrelPanel) -> Void)?
+  private weak var panelClient: IMKTextInput?
+  private var panelAllowsFallback = false
+  private var panelRetrying = false
+  private var panelRetryAttempt = 0
+  var candidatePositionRecovery = CandidatePositionRecovery()
   private static let panelPositionRetryDelays: [TimeInterval] = [0.02, 0.04, 0.08, 0.12, 0.2, 0.25, 0.3]
   // BEGIN ENHANCEMENT STATE
   private var physicalKeys = PhysicalKeys()
@@ -71,6 +78,9 @@ final class SquirrelInputController: IMKInputController {
     // Configuration fields and the local hotkey recorder belong to the Helper.
     // Routing them through our own IMK handler can consume their key events.
     guard inputApplicationIdentifier(sender as? IMKTextInput) != Self.settingsBundleID else { return false }
+    if panelPresentation != nil && event.type == .keyDown && CandidatePositionRecovery.movesTarget(event) {
+      cancelPanelPositionUpdate()
+    }
     let modifiers = event.modifierFlags
     let changes = lastModifiers.symmetricDifference(modifiers)
 
@@ -851,63 +861,141 @@ private extension SquirrelInputController {
   func showPanel(preedit: String, selRange: NSRange, caretPos: Int, candidates: [String], comments: [String], labels: [String], highlighted: Int, page: Int, lastPage: Bool) {
     guard let client, EnhancementBridge.shared.input === self,
           let panel = NSApp.squirrelAppDelegate.panel else { return }
-    cancelPanelPositionUpdate()
-    let request = panelRequest
     if candidates.isEmpty && preedit.isEmpty && !panel.hasPendingStatus {
+      cancelPanelPositionUpdate()
       panel.inputController = self
       panel.update(preedit: preedit, selRange: selRange, caretPos: caretPos, candidates: candidates, comments: comments, labels: labels,
                    highlighted: highlighted, page: page, lastPage: lastPage, update: true)
       return // No visible candidate/preedit/status: no host geometry IPC is needed.
     }
-    // Let the host finish its key callback before asking it for geometry. Keep
-    // only the newest request; commit, blur and source changes revoke old work.
-    updatePanelPosition(request: request, generation: inputGeneration, client: client, attempt: 0,
-                        allowsFallback: !candidates.isEmpty || !preedit.isEmpty) { panel in
+    // A host may rotate its client proxy without a full activation pair. The
+    // old coalesced work must not occupy the new proxy's scheduling slot.
+    if panelClient !== client { cancelPanelPositionUpdate(); panelClient = client }
+    // Coalesce the latest content independently of geometry retries. Rapid
+    // typing/paging cannot keep restarting the recovery deadline, and content
+    // never waits for an AX round trip or the next delayed position retry.
+    panelAllowsFallback = !candidates.isEmpty || !preedit.isEmpty
+    panelPresentation = { panel in
       panel.update(preedit: preedit, selRange: selRange, caretPos: caretPos, candidates: candidates, comments: comments, labels: labels,
                    highlighted: highlighted, page: page, lastPage: lastPage, update: true)
     }
+    guard panelPositionWork == nil else { return }
+    let request = panelRequest, generation = inputGeneration
+    let work = DispatchWorkItem { [weak self, weak client] in
+      guard let self, let client, self.panelPositionCurrent(request, generation, client) else { return }
+      self.panelPositionWork = nil
+      self.candidatePositionRecovery.startMonitoring { [weak self] in
+        guard let self else { return }
+        self.cancelPanelPositionUpdate()
+        if let panel = NSApp.squirrelAppDelegate.panel, panel.inputController === self { panel.hide() }
+      }
+      if self.panelRetrying {
+        self.presentPanel(at: self.candidatePositionRecovery.cached(bundle: self.inputApplicationIdentifier(client) ?? ""), source: "cache")
+      } else { self.updatePanelPosition(request: request, generation: generation, client: client) }
+    }
+    panelPositionWork = work
+    DispatchQueue.main.async(execute: work)
   }
 
   private func cancelPanelPositionUpdate() {
+    // Hidden-candidate typing has no display work or cache to revoke. Keep
+    // that hot path free of repeated monitor/cache teardown on every letter.
+    guard panelPresentation != nil || panelPositionWork != nil || panelRetryWork != nil || panelClient != nil else { return }
     panelRequest &+= 1
     panelPositionWork?.cancel(); panelPositionWork = nil
+    panelRetryWork?.cancel(); panelRetryWork = nil
+    panelPresentation = nil; panelRetrying = false; panelRetryAttempt = 0
+    panelClient = nil
+    candidatePositionRecovery.invalidate(stop: true)
   }
 
-  private func updatePanelPosition(request: UInt64, generation: UInt64, client: IMKTextInput,
-                                   attempt: Int, allowsFallback: Bool, present: @escaping (SquirrelPanel) -> Void) {
-    let work = DispatchWorkItem { [weak self, weak client] in
-      guard let self, let client, self.panelRequest == request, self.inputGeneration == generation,
-            self.client === client, EnhancementBridge.shared.input === self,
-            let panel = NSApp.squirrelAppDelegate.panel else { return }
-      self.panelPositionWork = nil
-      let inputPos = KeyboardInputPosition.caret(client: client)
-      // Host geometry calls may reenter activation, commit or deactivation.
-      guard self.panelRequest == request, self.inputGeneration == generation,
-            self.client === client, EnhancementBridge.shared.input === self else { return }
-      guard let inputPos else {
-        // Geometry is optional for displaying keyboard candidates, not for
-        // deciding who receives text. A transient failure must not make a
-        // working composition invisible, even if new keys keep revoking the
-        // retry. Use a visible screen fallback, never a fabricated caret or a
-        // previous field's anchor. Voice target verification stays unchanged.
-        if allowsFallback {
-          if attempt == 0 || panel.inputController !== self || !panel.isVisible {
-            panel.placeCandidates(at: nil); panel.inputController = self
-            present(panel)
-          }
-        } else { panel.hide() }
-        if attempt < Self.panelPositionRetryDelays.count {
-          self.updatePanelPosition(request: request, generation: generation, client: client,
-                                   attempt: attempt + 1, allowsFallback: allowsFallback, present: present)
-        }
-        return
-      }
-      panel.placeCandidates(at: inputPos); panel.inputController = self
-      present(panel)
+  internal func candidatePositionReport() -> [String: Any] {
+    var report = CandidatePositionStatistics.shared.report()
+    let panel = NSApp.squirrelAppDelegate.panel
+    report["active_controller"] = EnhancementBridge.shared.input === self && client != nil
+    report["client_bundle"] = inputApplicationIdentifier(client) ?? "unknown"
+    report["panel_visible"] = panel?.inputController === self && panel?.isVisible == true
+    report["composition_present"] = !preedit.isEmpty
+    report["retry_pending"] = panelRetryWork != nil
+    return report
+  }
+
+  // An explicit support check, never scheduled by ordinary typing. It probes
+  // both actual host interfaces without showing UI or reading document text.
+  internal func inspectCandidatePosition(completion: @escaping ([String: Any]) -> Void) {
+    var report = candidatePositionReport()
+    guard let client, EnhancementBridge.shared.input === self else { completion(report); return }
+    let generation = inputGeneration
+    let query = KeyboardInputPosition.query(client: client)
+    report["native_caret_available"] = query.rect != nil
+    report["native_position_source"] = query.source.rawValue
+    guard inputGeneration == generation, self.client === client,
+          let context = CandidatePositionRecovery.frontContext(bundle: inputApplicationIdentifier(client) ?? "") else {
+      report["ax_caret_available"] = false; completion(report); return
     }
-    panelPositionWork = work
-    if attempt == 0 { DispatchQueue.main.async(execute: work) }
-    else { DispatchQueue.main.asyncAfter(deadline: .now() + Self.panelPositionRetryDelays[attempt - 1], execute: work) }
+    CandidateAccessibilityCaret.lookup(context) { [weak self, weak client] anchor in
+      let current = self?.inputGeneration == generation && self?.client === client &&
+        EnhancementBridge.shared.input === self && CandidatePositionRecovery.isCurrent(context)
+      report["inspection_target_current"] = current
+      report["ax_caret_available"] = current && anchor.flatMap { KeyboardInputPosition.normalizedCaret($0.rect) } != nil
+      report["ax_cache_observable"] = current && anchor?.lease?.valid == true
+      completion(report)
+    }
+  }
+
+  private func panelPositionCurrent(_ request: UInt64, _ generation: UInt64, _ client: IMKTextInput) -> Bool {
+    panelRequest == request && inputGeneration == generation && self.client === client &&
+      EnhancementBridge.shared.input === self && panelPresentation != nil
+  }
+
+  private func presentPanel(at position: NSRect?, source: String) {
+    guard let panel = NSApp.squirrelAppDelegate.panel, let present = panelPresentation else { return }
+    if position == nil && !panelAllowsFallback { panel.hide(); return }
+    panel.placeCandidates(at: position); panel.inputController = self
+    CandidatePositionStatistics.shared.displayed(position == nil ? "screen" : source)
+    present(panel)
+  }
+
+  private func updatePanelPosition(request: UInt64, generation: UInt64, client: IMKTextInput) {
+    guard panelPositionCurrent(request, generation, client) else { return }
+    let start = ProcessInfo.processInfo.systemUptime
+    let query = KeyboardInputPosition.query(client: client)
+    CandidatePositionStatistics.shared.native(query, elapsed: ProcessInfo.processInfo.systemUptime - start)
+    // Host geometry calls may reenter activation, commit or deactivation.
+    guard panelPositionCurrent(request, generation, client) else { return }
+    if let position = query.rect {
+      panelRetryWork?.cancel(); panelRetryWork = nil
+      panelRetryAttempt = 0; panelRetrying = false
+      // A native hit supersedes an outstanding AX answer for this position.
+      candidatePositionRecovery.invalidate()
+      presentPanel(at: position, source: query.source.rawValue)
+      return
+    }
+    let bundle = inputApplicationIdentifier(client) ?? ""
+    presentPanel(at: candidatePositionRecovery.cached(bundle: bundle), source: "cache")
+    candidatePositionRecovery.recover(bundle: bundle) { [weak self, weak client] rect in
+      guard let self, let client, self.panelPositionCurrent(request, generation, client) else { return }
+      self.panelRetryWork?.cancel(); self.panelRetryWork = nil
+      self.panelRetryAttempt = 0; self.panelRetrying = false
+      self.presentPanel(at: rect, source: "ax")
+    }
+    guard panelRetryWork == nil else { return }
+    guard panelRetryAttempt < Self.panelPositionRetryDelays.count else {
+      panelRetrying = false; panelRetryAttempt = 0
+      CandidatePositionStatistics.shared.increment("retry_exhausted")
+      return // No permanent idle polling; a later content update may try again.
+    }
+    panelRetrying = true
+    let delay = Self.panelPositionRetryDelays[panelRetryAttempt]
+    panelRetryAttempt += 1
+    let work = DispatchWorkItem { [weak self, weak client] in
+      guard let self, let client, self.panelPositionCurrent(request, generation, client) else { return }
+      self.panelRetryWork = nil
+      CandidatePositionStatistics.shared.increment("retries")
+      self.updatePanelPosition(request: request, generation: generation, client: client)
+    }
+    panelRetryWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
   }
 
   private func handleASCIIModeToggle(_ notification: Notification) {

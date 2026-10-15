@@ -251,6 +251,21 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
     notifCenter.addObserver(forName:.init("SquirrelEnhancedDevCheckVoiceTargetNotification"),object:nil,queue:.main) { notice in
       (EnhancementBridge.shared.input as? SquirrelInputController)?.enhancementCheckVoiceTarget(requestID:notice.object as? String)
     }
+    notifCenter.addObserver(forName:.init("SquirrelEnhancedDevCandidatePositionNotification"),object:nil,queue:.main) { notice in
+      guard let request = notice.object as? String, UUID(uuidString: request) != nil else { return }
+      func reply(_ value: [String: Any]) {
+        var report = value
+        report["app_version"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        report["microphone_used"] = false; report["cloud_calls"] = 0
+        guard let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]), data.count <= 4096,
+              let text = String(data: data, encoding: .utf8) else { return }
+        notifCenter.postNotificationName(.init("SquirrelEnhancedDevCandidatePositionResponse"), object: request,
+                                        userInfo: ["report": text], deliverImmediately: true)
+      }
+      let controller = EnhancementBridge.shared.input as? SquirrelInputController
+      if notice.userInfo?["inspect"] as? Bool == true, let controller { controller.inspectCandidatePosition(completion: reply) }
+      else { reply(controller?.candidatePositionReport() ?? ["active_controller": false]) }
+    }
     notifCenter.addObserver(forName: .init("SquirrelEnhancedDevOpenSettingsNotification"), object: nil, queue: .main) { _ in
       EnhancementBridge.shared.openSettings()
     }

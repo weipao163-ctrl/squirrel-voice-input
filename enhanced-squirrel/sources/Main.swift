@@ -69,16 +69,19 @@ struct SquirrelApp {
           if let data=try? JSONSerialization.data(withJSONObject:value,options:[.sortedKeys]),
              let text=String(data:data,encoding:.utf8) { print(text) }
           return true
-        case "--voice-target-check":
+        case "--voice-target-check", "--candidate-position-stats", "--candidate-position-check":
+          let candidateStats = args[1] != "--voice-target-check"
+          let responseName = candidateStats ? "SquirrelEnhancedDevCandidatePositionResponse" : "SquirrelEnhancedDevVoiceTargetCheckResponse"
+          let requestName = candidateStats ? "SquirrelEnhancedDevCandidatePositionNotification" : "SquirrelEnhancedDevCheckVoiceTargetNotification"
           let request=UUID().uuidString
           var response:String?
           let center=DistributedNotificationCenter.default()
-          let token=center.addObserver(forName:.init("SquirrelEnhancedDevVoiceTargetCheckResponse"),object:request,queue:.main) { notice in
+          let token=center.addObserver(forName:.init(responseName),object:request,queue:.main) { notice in
             if let value=notice.userInfo?["report"] as? String,value.utf8.count <= 4096 { response=value }
           }
           defer { center.removeObserver(token) }
           DistributedNotificationCenter.default().postNotificationName(
-            .init("SquirrelEnhancedDevCheckVoiceTargetNotification"),object:request,userInfo:nil,deliverImmediately:true)
+            .init(requestName),object:request,userInfo:candidateStats ? ["inspect":args[1] == "--candidate-position-check"] : nil,deliverImmediately:true)
           let deadline=Date(timeIntervalSinceNow:3)
           while response == nil && Date() < deadline { RunLoop.main.run(until:Date(timeIntervalSinceNow:0.03)) }
           print(response ?? "当前输入法没有返回位置检查结果；未采音、未发送识别任务。")
