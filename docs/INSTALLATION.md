@@ -6,13 +6,13 @@
 - 一个具有管理员安装权限的本地用户；安装目标是当前登录用户。
 - 语音功能需要自行开通的百炼或火山引擎语音服务及对应凭据。
 
-从 [v0.1.31 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.31) 下载 `.pkg` 与同名 `.pkg.sha256`。将两者放在同一目录，在该目录执行：
+从 [v0.1.32 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.32) 下载 `.pkg` 与同名 `.pkg.sha256`。将两者放在同一目录，在该目录执行：
 
 ```bash
-shasum -a 256 -c SquirrelVoiceInput-0.1.20261014.31-arm64.pkg.sha256
+shasum -a 256 -c SquirrelVoiceInput-0.1.20261015.32-arm64.pkg.sha256
 ```
 
-确认显示 `OK`，再双击安装包。应用版本为 0.1.31，Installer 的构建版本为 0.1.20261014.31。
+确认显示 `OK`，再双击安装包。应用版本为 0.1.32，Installer 的构建版本为 0.1.20261015.32。
 
 ## 首次安装的系统放行
 
@@ -35,6 +35,10 @@ shasum -a 256 -c SquirrelVoiceInput-0.1.20261014.31-arm64.pkg.sha256
 6. 鉴权通过后，在测试框按住热键说话，松开后自动识别并输入。云识别会向自己配置的服务上传音频，可能按账号计费。
 
 使用细节见 [使用说明](USAGE.md)，数据与网络范围见 [隐私说明](PRIVACY.md)。新电脑不会继承其他电脑的 API Key、麦克风配置或权限。
+
+## 0.1.32 候选窗检查
+
+普通文本框中输入拼音并按空格后应始终能看到候选。宿主暂不返回光标坐标时，候选窗显示在屏幕下方中央；重试取得坐标或下一次候选更新后恢复到光标旁。选词、Esc 取消或离开输入框时正常隐藏；不需要修改权限或重新部署。微信里的偶发场景请按同样步骤复验，组件测试范围见[修复报告](2026-10-15_fix-candidate-visibility-report.md)。
 
 ## 0.1.31 首次使用检查
 

@@ -99,3 +99,13 @@ python3 tools/run_default_letters.py --app enhanced-squirrel/build/CLT/SquirrelE
 ```
 
 此检查在新的隔离目录启动实际包内 Rime；分别覆盖首次空格/字母/禁用和用户自定义补丁优先级。详情见[修复与验收范围](2026-10-14_fix-default-letter-selection-report.md)。
+
+## 0.1.32 候选窗可见性
+
+```bash
+python3 tools/run_native_keyboard_input.py --label candidate-visibility
+python3 tools/run_native_candidate_panel.py
+python3 tools/run_native_voice_target.py
+```
+
+键盘夹具模拟坐标暂缺、持续缺失和分页过程中间歇缺失，检查候选回退、恢复及请求撤销；AppKit 夹具检查横/竖排的实际屏幕边界。它们不连接微信真实输入框，也不采音或调用云端服务。旧控制器的 7 项失败对照与验收边界见[报告](2026-10-15_fix-candidate-visibility-report.md)。
