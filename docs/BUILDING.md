@@ -109,3 +109,18 @@ python3 tools/run_native_voice_target.py
 ```
 
 键盘夹具模拟坐标暂缺、持续缺失和分页过程中间歇缺失，检查候选回退、恢复及请求撤销；AppKit 夹具检查横/竖排的实际屏幕边界。它们不连接微信真实输入框，也不采音或调用云端服务。旧控制器的 7 项失败对照与验收边界见[报告](2026-10-15_fix-candidate-visibility-report.md)。
+
+
+### 0.1.33 坐标恢复与性能回归
+
+```bash
+python3 tools/run_native_keyboard_input.py --label caret-reliability
+python3 tools/run_native_candidate_panel.py
+python3 tools/run_native_voice_target.py
+```
+
+79 项键盘检查执行实际生产控制器、实际候选面板与隔离的真实 Rime：覆盖连续内容更新、慢速 AX、单任务合并、缓存失效、迟到结果、原生结果优先和宿主代理更换。AX 传输与测试时钟可注入；隔离宿主不监听用户正在其他应用进行的操作，真实系统监听需要另做应用层验证。原生目标另有 106 项检查。
+
+`--controller-source` 允许在同一构建环境载入旧控制器，旧版只执行原有 56 项通用检查。性能段固定测试 `nihao` 后 Esc，包含 24,000 次 down/up 事件、100 个新控制器、500 次激活和进程资源采样；这是夹具内耗时，不是物理键盘或目标软件端到端延迟。见[本版报告](2026-10-15_fix-caret-reliability-report.md)。
+
+已安装应用可运行 `--candidate-position-stats` 读取最多 64 个样本的内存统计；`--candidate-position-check` 显式查询当前前台客户端的原生/AX 坐标可用性。命令不录音、不调用云服务、不读取正文、不插入字符、不显示或移动候选窗；检查前应在普通文本框中选中增强版输入法。
