@@ -20,6 +20,18 @@ final class SquirrelPanel: NSPanel {
   }
 
   var position: NSRect
+  private var fallbackScreen: NSScreen?
+
+  // Presentation only: these screen coordinates never supply voice target or
+  // insertion evidence. A missing caret must not hide a working composition.
+  func placeCandidates(at caret: NSRect?) {
+    fallbackScreen = caret == nil ? (NSScreen.main ?? NSScreen.screens.first) : nil
+    if let caret { position = caret }
+    else if let screen = fallbackScreen {
+      let usable = screen.visibleFrame
+      position = NSRect(x: usable.midX, y: usable.minY + 16, width: 0, height: 1)
+    }
+  }
   private var screenRect: NSRect = .zero
   private var maxHeight: CGFloat = 0
 
@@ -47,6 +59,10 @@ final class SquirrelPanel: NSPanel {
     self.back = Self.makeBackgroundView()
     super.init(contentRect: position, styleMask: .nonactivatingPanel, backing: .buffered, defer: true)
     self.level = .init(Int(CGShieldingWindowLevel()))
+    // This nonactivating input panel follows the host, including full-screen
+    // Spaces. The controller alone owns dismissal on commit/cancel/blur.
+    self.hidesOnDeactivate = false
+    self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     self.hasShadow = true
     self.isOpaque = false
     self.backgroundColor = .clear
@@ -345,6 +361,10 @@ private extension SquirrelPanel {
   }
 
   func currentScreen() {
+    if let fallbackScreen {
+      screenRect = fallbackScreen.visibleFrame
+      return
+    }
     if let screen = NSScreen.main {
       screenRect = screen.frame
     }
@@ -455,7 +475,7 @@ private extension SquirrelPanel {
 
       maxHeight = 0
     } else {
-      if theme.memorizeSize && vertical && (Self.caretIsInLowerHalf(position, screen: screenRect) ||
+      if fallbackScreen == nil && theme.memorizeSize && vertical && (Self.caretIsInLowerHalf(position, screen: screenRect) ||
           position.minX + max(contentRect.width, maxHeight) + theme.edgeInset.width * 2 > screenRect.maxX) {
         if contentRect.width >= maxHeight {
           maxHeight = contentRect.width
@@ -471,7 +491,9 @@ private extension SquirrelPanel {
 
       panelRect.size = naturalPanelSize
 
-      if vertical {
+      if fallbackScreen != nil {
+        panelRect.origin = NSPoint(x: screenRect.midX - panelRect.width / 2, y: screenRect.minY + 16)
+      } else if vertical {
         // Anchor vertical panels on one side of the cursor to avoid jumping while typing.
         if !Self.caretIsInLowerHalf(position, screen: screenRect) {
           panelRect.origin.y = position.minY - SquirrelTheme.offsetHeight - panelRect.height + theme.pagingOffset

@@ -861,7 +861,8 @@ private extension SquirrelInputController {
     }
     // Let the host finish its key callback before asking it for geometry. Keep
     // only the newest request; commit, blur and source changes revoke old work.
-    updatePanelPosition(request: request, generation: inputGeneration, client: client, attempt: 0) { panel in
+    updatePanelPosition(request: request, generation: inputGeneration, client: client, attempt: 0,
+                        allowsFallback: !candidates.isEmpty || !preedit.isEmpty) { panel in
       panel.update(preedit: preedit, selRange: selRange, caretPos: caretPos, candidates: candidates, comments: comments, labels: labels,
                    highlighted: highlighted, page: page, lastPage: lastPage, update: true)
     }
@@ -873,7 +874,7 @@ private extension SquirrelInputController {
   }
 
   private func updatePanelPosition(request: UInt64, generation: UInt64, client: IMKTextInput,
-                                   attempt: Int, present: @escaping (SquirrelPanel) -> Void) {
+                                   attempt: Int, allowsFallback: Bool, present: @escaping (SquirrelPanel) -> Void) {
     let work = DispatchWorkItem { [weak self, weak client] in
       guard let self, let client, self.panelRequest == request, self.inputGeneration == generation,
             self.client === client, EnhancementBridge.shared.input === self,
@@ -884,16 +885,24 @@ private extension SquirrelInputController {
       guard self.panelRequest == request, self.inputGeneration == generation,
             self.client === client, EnhancementBridge.shared.input === self else { return }
       guard let inputPos else {
-        // A host may accept marked text before layout is ready. Never turn a
-        // failed query into (0, 0), or reuse another field's last panel anchor.
-        panel.hide()
+        // Geometry is optional for displaying keyboard candidates, not for
+        // deciding who receives text. A transient failure must not make a
+        // working composition invisible, even if new keys keep revoking the
+        // retry. Use a visible screen fallback, never a fabricated caret or a
+        // previous field's anchor. Voice target verification stays unchanged.
+        if allowsFallback {
+          if attempt == 0 || panel.inputController !== self || !panel.isVisible {
+            panel.placeCandidates(at: nil); panel.inputController = self
+            present(panel)
+          }
+        } else { panel.hide() }
         if attempt < Self.panelPositionRetryDelays.count {
           self.updatePanelPosition(request: request, generation: generation, client: client,
-                                   attempt: attempt + 1, present: present)
+                                   attempt: attempt + 1, allowsFallback: allowsFallback, present: present)
         }
         return
       }
-      panel.position = inputPos; panel.inputController = self
+      panel.placeCandidates(at: inputPos); panel.inputController = self
       present(panel)
     }
     panelPositionWork = work
