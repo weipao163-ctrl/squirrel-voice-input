@@ -31,6 +31,8 @@ def main():
         if controller.name != 'SquirrelInputController.swift':
             parser.error('controller-source must be a preserved SquirrelInputController.swift')
         sources = [controller if p.name == controller.name else p for p in sources]
+    recovery = next(p for p in sources if p.name == 'SquirrelInputController.swift')
+    recovery_defines = ['-D', 'CANDIDATE_RECOVERY_PROBE'] if 'var candidatePositionRecovery =' in recovery.read_text() else []
     sources.append(ROOT / 'tools/NativeKeyboardInputProbe.swift')
     objects = sorted(p for module in ['EnhancementCore', 'EnhancementIPC', 'EnhancementUI']
                      for p in (bins / (module + '.build')).glob('*.swift.o'))
@@ -55,7 +57,7 @@ def main():
                                    capture_output=True, text=True, timeout=30)
     if proxy_compile.returncode:
         print(proxy_compile.stderr); return proxy_compile.returncode
-    command = ['xcrun', 'swiftc', '-swift-version', '5', '-enable-bare-slash-regex',
+    command = ['xcrun', 'swiftc', '-swift-version', '5', '-enable-bare-slash-regex', *recovery_defines,
                '-sdk', sdk, '-I', str(bins / 'Modules'), '-F', str(project / 'Frameworks'),
                '-I', str(project / 'librime/src'), '-I', str(project / 'librime/include'),
                '-import-objc-header', str(bridge),

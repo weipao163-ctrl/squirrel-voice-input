@@ -178,7 +178,12 @@ final class FixtureTextClient: NSObject, IMKTextInput {
     client.range = NSRange(location:NSNotFound,length:0)
     check("first_rect_does_not_invent_unknown_offset",capture() == nil)
     client.range = NSRange(location:320,length:0);client.firstRectOverride = nil
-    for rect in [NSRect(x:0,y:0,width:1,height:-20),NSRect(x:CGFloat.nan,y:0,width:1,height:20),NSRect(x:0,y:0,width:-1,height:20),
+    for directed in [NSRect(x:originalRect.midX,y:originalRect.midY,width:-8,height:20),
+                     NSRect(x:originalRect.midX,y:originalRect.midY,width:0,height:-20)] {
+      client.rect = directed
+      check("directed_native_geometry_is_standardized_\(checks.count)",KeyboardInputPosition.caret(client:client) == directed.standardized)
+    }
+    for rect in [NSRect(x:CGFloat.nan,y:0,width:1,height:20),NSRect(x:0,y:CGFloat.infinity,width:1,height:20),
                  originalRect.offsetBy(dx:100000,dy:0),NSRect(x:0,y:0,width:1,height:0)] {
       client.rect = rect
       check("invalid_geometry_is_not_used_as_caret_\(checks.count)",KeyboardInputPosition.caret(client:client) == nil)

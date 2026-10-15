@@ -119,6 +119,15 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     EnhancementBridge.shared.settings.letters["letter_fixture"]?.enabled = true
     let server = IMKServer(name: "KeyboardProbe-" + UUID().uuidString,
       bundleIdentifier: Bundle.main.bundleIdentifier)
+    func newController(_ client: KeyboardProbeClient) -> SquirrelInputController {
+      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+#if CANDIDATE_RECOVERY_PROBE
+      // The host is in-memory, so user activity in real apps cannot revoke
+      // this fixture. System-event behavior is verified in the live-app layer.
+      controller.candidatePositionRecovery = CandidatePositionRecovery(observeSystemEvents: false)
+#endif
+      return controller
+    }
     var checks: [[String: Any]] = [], metrics: [String: Any] = [:]
     func check(_ name: String, _ pass: Bool) { checks.append(["name": name, "passed": pass]) }
     func visibleFallback() -> Bool {
@@ -144,7 +153,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     }
     do {
       let client = KeyboardProbeClient()
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       client.queryDelay = 0.04
       let start = ProcessInfo.processInfo.systemUptime
@@ -167,7 +176,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     do {
       api.finalize()
       let client = KeyboardProbeClient()
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       for c in "nix" { _ = send(controller, client, String(c)) }
       _ = send(controller, client, "\u{7f}", code: 51)
@@ -181,7 +190,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     do {
       api.finalize()
       let client = KeyboardProbeClient()
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       _ = send(controller, client, "n"); _ = send(controller, client, "i")
       _ = send(controller, client, "\u{1b}", code: 53)
@@ -194,7 +203,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
       api.finalize()
       let first = KeyboardProbeClient(), second = KeyboardProbeClient()
       second.bundle = "org.rime.KeyboardProbeSecondClient"
-      let controller = SquirrelInputController(server: server, delegate: nil, client: first.proxy)!
+      let controller = newController(first)
       controller.activateServer(first.proxy)
       _ = send(controller, first, "n"); _ = send(controller, first, "i")
       controller.deactivateServer(first.proxy)
@@ -209,7 +218,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     }
     do {
       let client = KeyboardProbeClient()
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       NotificationCenter.default.post(name: .init("SquirrelEnhancedDevSetASCIIModeNotification"), object: true)
       for c in "abc123" { _ = send(controller, client, String(c)) }
@@ -220,7 +229,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     do {
       let client = KeyboardProbeClient()
       client.bundle = "org.rime.SquirrelEnhanced.Development.VoiceHelper"
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       for c in "apikey123" { _ = send(controller, client, String(c)) }
       check("helper_settings_fields_remain_application_owned", client.fallback == "apikey123" && client.marked.isEmpty)
@@ -228,7 +237,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     }
     do {
       let client = KeyboardProbeClient()
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       for c in "nihao" { _ = send(controller, client, String(c)) }
       _ = send(controller, client, " ", code: 49); _ = send(controller, client, "a")
@@ -239,7 +248,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     }
     do {
       let client = KeyboardProbeClient()
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       for c in "nihao" { _ = send(controller, client, String(c)) }
       _ = send(controller, client, " ", code: 49)
@@ -249,7 +258,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     }
     do {
       let client = KeyboardProbeClient()
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       for c in "nihao" { _ = send(controller, client, String(c)) }
       _ = send(controller, client, " ", code: 49)
@@ -263,7 +272,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     // accidentally hide the absence of a retry in the production controller.
     do {
       let client = KeyboardProbeClient(); client.geometryAvailable = false
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       _ = send(controller, client, "n"); _ = send(controller, client, "i")
       _ = send(controller, client, " ", code: 49)
@@ -279,7 +288,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
       let client = KeyboardProbeClient(); client.geometryAvailable = false
       let screen = NSScreen.main!.frame
       client.fallbackRect = NSRect(x: screen.midX + 30, y: screen.midY, width: 0, height: 20)
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       _ = send(controller, client, "n"); _ = send(controller, client, "i")
       _ = send(controller, client, " ", code: 49)
@@ -289,7 +298,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     }
     do {
       let client = KeyboardProbeClient(); client.geometryAvailable = false
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       delegate.panel!.updateStatus(long:"中文模式",short:"中")
       _ = send(controller, client, "\u{1b}", code:53)
@@ -301,7 +310,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     }
     for action in ["commit", "blur", "empty", "replacement"] {
       let client = KeyboardProbeClient(); client.geometryAvailable = false
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       _ = send(controller, client, "n"); _ = send(controller, client, "i")
       _ = send(controller, client, " ", code: 49)
@@ -323,7 +332,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     }
     do {
       let client = KeyboardProbeClient(); client.geometryAvailable = false
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       _ = send(controller, client, "n"); _ = send(controller, client, "i")
       _ = send(controller, client, " ", code: 49)
@@ -338,7 +347,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     do {
       EnhancementBridge.shared.settings.letters["letter_fixture"]?.hideCandidates = false
       let client = KeyboardProbeClient(); client.geometryAvailable = false
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       _ = send(controller, client, "n"); _ = send(controller, client, "i")
       pump(0.015)
@@ -352,7 +361,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     }
     do {
       let client = KeyboardProbeClient()
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       _ = send(controller, client, "n"); _ = send(controller, client, "i")
       _ = send(controller, client, " ", code: 49); pump()
@@ -361,8 +370,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
       _ = send(controller, client, "=", code: 24); pump(0.015)
       check("lost_geometry_during_paging_keeps_candidates_visible", visibleFallback() && client.committed.isEmpty)
       let before = client.geometryQueries
-      // Rapid key updates revoke and restart retries. A fallback cannot depend
-      // on exhausting them, or continuous typing/paging would stay invisible.
+      // Content changes must neither hide the fallback nor restart retries.
       for _ in 0..<4 {
         _ = send(controller, client, "-", code: 27); pump(0.004)
         _ = send(controller, client, "=", code: 24); pump(0.004)
@@ -377,11 +385,11 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     do {
       let previous = KeyboardProbeClient(), current = KeyboardProbeClient()
       current.geometryAvailable = false
-      let old = SquirrelInputController(server: server, delegate: nil, client: previous.proxy)!
+      let old = newController(previous)
       old.activateServer(previous.proxy)
       _ = send(old, previous, "n"); _ = send(old, previous, "i")
       _ = send(old, previous, " ", code: 49); pump()
-      let controller = SquirrelInputController(server: server, delegate: nil, client: current.proxy)!
+      let controller = newController(current)
       controller.activateServer(current.proxy)
       _ = send(controller, current, "n"); _ = send(controller, current, "i")
       _ = send(controller, current, " ", code: 49); pump(0.015)
@@ -393,10 +401,10 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     }
     do {
       let old = KeyboardProbeClient(), current = KeyboardProbeClient()
-      let previous = SquirrelInputController(server: server, delegate: nil, client: old.proxy)!
+      let previous = newController(old)
       previous.activateServer(old.proxy)
       _ = send(previous, old, "n")
-      let controller = SquirrelInputController(server: server, delegate: nil, client: current.proxy)!
+      let controller = newController(current)
       controller.activateServer(current.proxy)
       _ = send(controller, current, "n"); _ = send(controller, current, "i")
       _ = send(controller, current, " ", code: 49)
@@ -412,7 +420,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     do {
       api.finalize()
       let client = KeyboardProbeClient()
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       _ = send(controller, client, "n"); _ = send(controller, client, "i")
       check("unready_first_letters_do_not_escape_as_english", client.fallback.isEmpty)
@@ -426,7 +434,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     }
     do {
       let client = KeyboardProbeClient()
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       let literal = "ab2" + String(repeating: "a", count: 600)
       for c in literal { _ = send(controller, client, String(c)) }
@@ -435,12 +443,100 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
       check("long_literal_commits_exactly_once", client.committed == literal && client.marked.isEmpty)
       controller.deactivateServer(client.proxy)
     }
+#if CANDIDATE_RECOVERY_PROBE
+    do {
+      let first = KeyboardProbeClient(), rotated = KeyboardProbeClient()
+      let controller = newController(first)
+      controller.activateServer(first.proxy)
+      _ = send(controller, first, "n"); _ = send(controller, first, "i"); _ = send(controller, first, " ", code:49)
+      _ = send(controller, rotated, "=", code:24)
+      pump(0.05)
+      check("rotated_host_proxy_replaces_coalesced_work_without_stalling", rotated.geometryQueries > 0 && first.geometryQueries == 0 && delegate.panel!.isVisible)
+      controller.deactivateServer(rotated.proxy)
+    }
+    // Controlled AX transport, actual recovery coordinator/controller/panel.
+    // No live field, Accessibility permission request, document read or write.
+    do {
+      let screen = NSScreen.main!.frame
+      let context = CandidatePositionRecovery.Context(pid: 42, bundle: "fixture", screens: [screen], top: screen.maxY)
+      var now: TimeInterval = 10, validContext = true, calls = 0
+      var pending: ((CandidatePositionRecovery.Anchor?) -> Void)?
+      let recovery = CandidatePositionRecovery(context: { _ in context }, current: { _ in validContext }, lookup: { _, reply in
+        calls += 1; pending = reply
+      }, observeSystemEvents: false, clock: { now })
+      let rect = NSRect(x: screen.midX + 70, y: screen.midY + 20, width: 0, height: 23)
+      let lease = CandidatePositionRecovery.Lease()
+      var positions: [NSRect] = []
+      for _ in 0..<100 { recovery.recover(bundle: "fixture") { positions.append($0) } }
+      check("ax_lookup_is_coalesced_to_one_inflight_request", calls == 1)
+      pending?(.init(rect: rect, window: screen, lease: lease))
+      check("verified_ax_anchor_is_available_to_display_only", positions == [rect] && recovery.cached(bundle: "fixture") == rect)
+      check("ax_cache_is_bound_to_client_application", recovery.cached(bundle: "another-app") == nil)
+      now += 0.19
+      check("ax_cache_expires_without_sliding_on_reads", recovery.cached(bundle: "fixture") == nil)
+      recovery.recover(bundle: "fixture") { positions.append($0) }
+      for _ in 0..<100 { recovery.invalidate(); recovery.recover(bundle: "fixture") { positions.append($0) } }
+      check("focus_churn_does_not_queue_more_ax_jobs", calls == 2)
+      pending?(.init(rect: rect, window: screen, lease: lease))
+      check("superseded_ax_result_is_discarded", positions.count == 1 && recovery.cached(bundle: "fixture") == nil)
+      now += 0.19; recovery.recover(bundle: "fixture") { positions.append($0) }
+      validContext = false
+      pending?(.init(rect: rect, window: screen, lease: lease))
+      check("changed_foreground_or_display_context_discards_ax_result", positions.count == 1)
+      check("ordinary_letters_do_not_invalidate_candidate_anchor", !CandidatePositionRecovery.movesTarget(event("n",code:45)))
+      check("navigation_and_command_keys_invalidate_candidate_anchor",
+        CandidatePositionRecovery.movesTarget(event("",code:123)) && CandidatePositionRecovery.movesTarget(event("x",modifiers:.command)))
+    }
+    for action in ["recover", "blur", "native"] {
+      let client = KeyboardProbeClient(); client.geometryAvailable = false
+      let controller = newController(client)
+      let screen = NSScreen.main!.frame
+      let context = CandidatePositionRecovery.Context(pid: 42, bundle: "fixture", screens: [screen], top: screen.maxY)
+      var calls = 0, pending: ((CandidatePositionRecovery.Anchor?) -> Void)?
+      controller.candidatePositionRecovery = CandidatePositionRecovery(context: { _ in context }, current: { _ in true }, lookup: { _, reply in
+        calls += 1; pending = reply
+      }, observeSystemEvents: false)
+      controller.activateServer(client.proxy)
+      _ = send(controller, client, "n"); _ = send(controller, client, "i"); _ = send(controller, client, " ", code:49)
+      check("ax_transport_never_runs_in_key_callback_" + action, calls == 0)
+      pump(0.01)
+      check("native_failure_starts_async_ax_recovery_" + action, calls == 1 && visibleFallback())
+      if action == "recover" {
+        let start = ProcessInfo.processInfo.systemUptime
+        func displayedText() -> String {
+          delegate.panel!.contentView!.subviews.compactMap { $0 as? SquirrelView }
+            .compactMap { $0.textContentStorage.attributedString?.string }.joined()
+        }
+        let initialText = displayedText()
+        for index in 0..<11 {
+          _ = send(controller, client, index % 2 == 0 ? "=" : "-", code:index % 2 == 0 ? 24 : 27)
+          pump(0.015)
+        }
+        let text = displayedText()
+        check("continuous_updates_render_latest_content_during_slow_ax", !text.isEmpty && text != initialText)
+        check("continuous_updates_do_not_restart_native_retry_budget", client.geometryQueries <= 8 && client.geometryQueries >= 3)
+        check("slow_ax_does_not_queue_a_job_per_key", calls == 1 && ProcessInfo.processInfo.systemUptime - start < 2)
+      } else if action == "blur" { controller.deactivateServer(client.proxy) }
+      else { client.geometryAvailable = true; pump(0.12) }
+      let rect = NSRect(x:screen.midX + 70,y:screen.midY + 20,width:0,height:23)
+      pending?(.init(rect:rect,window:screen,lease:CandidatePositionRecovery.Lease()))
+      pump(0.01)
+      switch action {
+      case "recover":
+        check("ax_success_repositions_existing_candidates_without_another_key", delegate.panel!.isVisible && delegate.panel!.position == rect)
+        check("ax_display_recovery_never_inserts_text", client.committed.isEmpty && client.marked == "ni")
+      case "blur": check("late_ax_success_cannot_reopen_blurred_candidates", !delegate.panel!.isVisible)
+      default: check("native_success_supersedes_older_ax_geometry", delegate.panel!.isVisible && delegate.panel!.position.height == 18)
+      }
+      controller.deactivateServer(client.proxy)
+    }
+#endif
     var coldTimes: [Double] = [], coldPasses = 0
     for _ in 0..<100 {
       autoreleasepool {
         let client = KeyboardProbeClient()
         let start = ProcessInfo.processInfo.systemUptime
-        let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+        let controller = newController(client)
         controller.activateServer(client.proxy)
         _ = send(controller, client, "n")
         coldTimes.append((ProcessInfo.processInfo.systemUptime - start) * 1000)
@@ -456,7 +552,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     do {
       api.finalize(); KeyboardProbeSecurity.secure = true
       let client = KeyboardProbeClient()
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       _ = send(controller, client, "n"); _ = send(controller, client, "i")
       check("secure_input_never_buffers_unready_first_keys", client.fallback == "ni" && client.marked.isEmpty)
@@ -466,7 +562,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     }
     do {
       let client = KeyboardProbeClient()
-      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      let controller = newController(client)
       controller.activateServer(client.proxy)
       func release(_ text: String, _ code: UInt16) {
         let up = NSEvent.keyEvent(with: .keyUp, location: .zero, modifierFlags: [],
@@ -569,3 +665,12 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     if report["status"] as? String != "PASS" { exit(1) }
   }
 }
+
+#if !CANDIDATE_RECOVERY_PROBE
+// Allows preserved controllers predating display diagnostics to compile with
+// the current app delegate for the same original 56-check baseline workload.
+extension SquirrelInputController {
+  func candidatePositionReport() -> [String: Any] { CandidatePositionStatistics.shared.report() }
+  func inspectCandidatePosition(completion: @escaping ([String: Any]) -> Void) { completion(candidatePositionReport()) }
+}
+#endif
