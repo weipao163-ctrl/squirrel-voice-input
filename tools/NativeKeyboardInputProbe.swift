@@ -121,6 +121,13 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
       bundleIdentifier: Bundle.main.bundleIdentifier)
     var checks: [[String: Any]] = [], metrics: [String: Any] = [:]
     func check(_ name: String, _ pass: Bool) { checks.append(["name": name, "passed": pass]) }
+    func visibleFallback() -> Bool {
+      guard let panel = delegate.panel, let screen = NSScreen.main else { return false }
+      let usable = screen.visibleFrame
+      return panel.isVisible && usable.contains(panel.frame) &&
+        abs(panel.frame.midX - usable.midX) < 1 &&
+        panel.frame.minY >= usable.minY + 8 && panel.frame.minY <= usable.minY + 64
+    }
     func pump(_ duration: TimeInterval = 0.08) {
       // CLI fixtures need the autorelease boundary provided by an app event loop.
       autoreleasepool { RunLoop.main.run(until: Date(timeIntervalSinceNow: duration)) }
@@ -261,7 +268,7 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
       _ = send(controller, client, "n"); _ = send(controller, client, "i")
       _ = send(controller, client, " ", code: 49)
       pump(0.015)
-      check("missing_first_caret_never_shows_a_corner_panel", !delegate.panel!.isVisible)
+      check("missing_first_caret_shows_visible_centered_fallback", visibleFallback())
       client.geometryAvailable = true
       pump(0.25)
       check("late_host_layout_recovers_without_another_key", delegate.panel!.isVisible && delegate.panel!.position.height == 18)
@@ -323,7 +330,9 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
       pump(1.3)
       let queries = client.geometryQueries
       pump(0.3)
-      check("unavailable_caret_has_bounded_retries_and_no_corner", queries > 1 && queries <= 8 && client.geometryQueries == queries && !delegate.panel!.isVisible)
+      check("unavailable_caret_has_bounded_retries_and_visible_fallback", queries > 1 && queries <= 8 && client.geometryQueries == queries && visibleFallback())
+      _ = send(controller, client, "a")
+      check("fallback_candidates_commit_through_original_client", !client.committed.isEmpty && client.fallback.isEmpty && !delegate.panel!.isVisible)
       controller.deactivateServer(client.proxy)
     }
     do {
@@ -333,13 +342,54 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
       controller.activateServer(client.proxy)
       _ = send(controller, client, "n"); _ = send(controller, client, "i")
       pump(0.015)
-      check("editing_candidate_preview_waits_for_layout", !delegate.panel!.isVisible && client.marked == "ni")
+      check("editing_candidate_preview_remains_visible_without_caret", visibleFallback() && client.marked == "ni")
       client.geometryAvailable = true
       pump(0.25)
       check("editing_candidate_preview_recovers_at_caret", delegate.panel!.isVisible && delegate.panel!.position.height == 18)
       _ = send(controller, client, "\u{1b}", code: 53)
       controller.deactivateServer(client.proxy)
       EnhancementBridge.shared.settings.letters["letter_fixture"]?.hideCandidates = true
+    }
+    do {
+      let client = KeyboardProbeClient()
+      let controller = SquirrelInputController(server: server, delegate: nil, client: client.proxy)!
+      controller.activateServer(client.proxy)
+      _ = send(controller, client, "n"); _ = send(controller, client, "i")
+      _ = send(controller, client, " ", code: 49); pump()
+      check("intermittent_geometry_starts_at_real_caret", delegate.panel!.isVisible && delegate.panel!.position.height == 18)
+      client.geometryAvailable = false
+      _ = send(controller, client, "=", code: 24); pump(0.015)
+      check("lost_geometry_during_paging_keeps_candidates_visible", visibleFallback() && client.committed.isEmpty)
+      let before = client.geometryQueries
+      // Rapid key updates revoke and restart retries. A fallback cannot depend
+      // on exhausting them, or continuous typing/paging would stay invisible.
+      for _ in 0..<4 {
+        _ = send(controller, client, "-", code: 27); pump(0.004)
+        _ = send(controller, client, "=", code: 24); pump(0.004)
+      }
+      check("rapid_candidate_updates_cannot_starve_visible_fallback", visibleFallback() && client.geometryQueries > before)
+      client.geometryAvailable = true; pump(0.25)
+      check("intermittent_geometry_recovers_to_real_caret", delegate.panel!.isVisible && delegate.panel!.position.height == 18)
+      _ = send(controller, client, "a")
+      check("recovered_panel_still_commits_and_hides", !client.committed.isEmpty && client.fallback.isEmpty && !delegate.panel!.isVisible)
+      controller.deactivateServer(client.proxy)
+    }
+    do {
+      let previous = KeyboardProbeClient(), current = KeyboardProbeClient()
+      current.geometryAvailable = false
+      let old = SquirrelInputController(server: server, delegate: nil, client: previous.proxy)!
+      old.activateServer(previous.proxy)
+      _ = send(old, previous, "n"); _ = send(old, previous, "i")
+      _ = send(old, previous, " ", code: 49); pump()
+      let controller = SquirrelInputController(server: server, delegate: nil, client: current.proxy)!
+      controller.activateServer(current.proxy)
+      _ = send(controller, current, "n"); _ = send(controller, current, "i")
+      _ = send(controller, current, " ", code: 49); pump(0.015)
+      check("new_field_without_geometry_does_not_reuse_previous_caret", visibleFallback() && delegate.panel!.inputController === controller)
+      old.deactivateServer(previous.proxy)
+      check("old_field_blur_cannot_hide_new_fallback", visibleFallback())
+      controller.deactivateServer(current.proxy); pump(0.25)
+      check("new_fallback_blur_cancels_retries_and_hides", !delegate.panel!.isVisible)
     }
     do {
       let old = KeyboardProbeClient(), current = KeyboardProbeClient()

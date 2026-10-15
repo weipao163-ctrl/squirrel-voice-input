@@ -32,6 +32,9 @@ final class SquirrelInputController {
       try "style:\n  candidate_format: '\(format)'\n  show_paging: \(showPaging)\n  text_orientation: \(vertical ? "vertical" : "horizontal")\n  memorize_size: \(memorize)\n  font_point: 16\n  hilited_corner_radius: 0\n  corner_radius: 2\n  color_scheme: native\n".write(to:fixture,atomically:true,encoding:.utf8)
     }
     let panel = SquirrelPanel(position:NSRect(x:300,y:300,width:1,height:20))
+    check("candidate_window_is_not_hidden_by_input_method_app_deactivation", !panel.hidesOnDeactivate)
+    check("candidate_window_can_follow_text_clients_into_fullscreen_spaces",
+      panel.collectionBehavior.contains(.canJoinAllSpaces) && panel.collectionBehavior.contains(.fullScreenAuxiliary))
     let config = SquirrelConfig()
     if !CommandLine.arguments.contains("--skip-empty") {
     try writeConfig("",showPaging:false)
@@ -108,6 +111,25 @@ final class SquirrelInputController {
       check(memorize ? "vertical_size_memory_remains_opt_in" : "disabled_size_memory_can_shrink_at_screen_edge",
             longHeight > shortHeight && abs(verticalPanel.frame.height - (memorize ? longHeight : shortHeight)) < 1)
       verticalPanel.hide(); config.close()
+    }
+    for vertical in [false, true] {
+      try writeConfig("[candidate]",showPaging:false,vertical:vertical)
+      guard config.openBaseConfig() else { fatalError("Fallback fixture unavailable") }
+      let fallbackPanel = SquirrelPanel(position:.zero), usable = NSScreen.main!.visibleFrame
+      fallbackPanel.load(config:config,forDarkMode:false); fallbackPanel.load(config:config,forDarkMode:true)
+      func render() {
+        fallbackPanel.update(preedit:"ni",selRange:NSRange(location:0,length:2),caretPos:2,
+          candidates:["你好","你"],comments:["",""],labels:["a","s"],highlighted:0,page:0,lastPage:true,update:true)
+      }
+      fallbackPanel.placeCandidates(at:nil); render()
+      check("missing_caret_fallback_is_centered_above_dock_\(vertical)",
+        fallbackPanel.isVisible && usable.contains(fallbackPanel.frame) &&
+        abs(fallbackPanel.frame.midX - usable.midX) < 1 && abs(fallbackPanel.frame.minY - usable.minY - 16) < 1)
+      let caret = NSRect(x:usable.midX,y:usable.midY,width:1,height:18)
+      fallbackPanel.placeCandidates(at:caret); render()
+      check("recovered_caret_leaves_screen_fallback_\(vertical)",fallbackPanel.isVisible &&
+        fallbackPanel.position == caret && fallbackPanel.frame.minY > usable.minY + 64 && usable.contains(fallbackPanel.frame))
+      fallbackPanel.hide(); config.close()
     }
     let report:[String:Any] = ["status":checks.allSatisfy { $0["passed"] as? Bool == true } ? "PASS" : "FAIL",
       "checks":checks,"microphone_used":false,"cloud_calls":0,"personal_dictionary_used":false,
