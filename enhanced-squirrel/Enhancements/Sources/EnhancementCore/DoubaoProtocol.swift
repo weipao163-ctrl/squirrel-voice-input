@@ -48,16 +48,19 @@ public enum DoubaoProtocol {
     value.append(payload); return value
   }
   public static func response(_ data:Data) throws -> DoubaoResponse {
-    guard data.count >= 8, data.count <= budget, data[0] == 0x11, data[3] == 0 else {
+    // Data slices preserve their original indices. Bounds are byte counts,
+    // while every subscript/cursor must use the actual collection indices.
+    let base = data.startIndex
+    guard data.count >= 8, data.count <= budget, data[base] == 0x11, data[base+3] == 0 else {
       throw SettingsError.invalid("豆包数据包版本、头部或长度无效。")
     }
-    let type=data[1]>>4, flags=data[1]&15, serialization=data[2]>>4, compression=data[2]&15
+    let type=data[base+1]>>4, flags=data[base+1]&15, serialization=data[base+2]>>4, compression=data[base+2]&15
     guard [0,1].contains(compression), [9,15].contains(type), flags <= 3 else {
       throw SettingsError.invalid("豆包数据包类型或编码无效。")
     }
-    var offset=4
+    var offset=base+4
     func integer() throws -> UInt32 {
-      guard data.count-offset >= 4 else { throw SettingsError.invalid("豆包数据包被截断。") }
+      guard data.endIndex-offset >= 4 else { throw SettingsError.invalid("豆包数据包被截断。") }
       let value=(0..<4).reduce(UInt32(0)) { ($0<<8)|UInt32(data[offset+$1]) }
       offset += 4; return value
     }
@@ -70,7 +73,7 @@ public enum DoubaoProtocol {
             flags != 1 || (sequence ?? 0)>0 else { throw SettingsError.invalid("豆包结果序号或序列化方式无效。") }
     }
     let size=Int(try integer())
-    guard size <= budget, size == data.count-offset else { throw SettingsError.invalid("豆包数据包声明长度与实际长度不符。") }
+    guard size <= budget, size == data.endIndex-offset else { throw SettingsError.invalid("豆包数据包声明长度与实际长度不符。") }
     let packed=Data(data[offset...])
     let payload=compression == 1 ? try gunzip(packed) : packed
     if let code { return DoubaoResponse(text:nil,final:false,sequence:nil,errorCode:code) }
