@@ -96,6 +96,25 @@ final class CoreTests:XCTestCase {
     let single=try DoubaoProtocol.response(doubaoPacket(["result":[["text":"单段"]]]))
     XCTAssertEqual(single.text,"单段")
   }
+  func testDoubaoDecoderSupportsNonzeroDataIndicesAndTruncatedSlices() throws {
+    let packet=try doubaoPacket(["result":["text":"公开测试"]],flags:3,sequence:-2)
+    for prefix in [1,16,257] {
+      var storage=Data(repeating:0xff,count:prefix); storage.append(packet)
+      let sliced=storage.dropFirst(prefix)
+      XCTAssertEqual(sliced.startIndex,prefix)
+      let result=try DoubaoProtocol.response(sliced)
+      XCTAssertEqual(result.text,"公开测试"); XCTAssertTrue(result.final); XCTAssertEqual(result.sequence,-2)
+      for count in [0,1,7,8,packet.count-1] {
+        XCTAssertThrowsError(try DoubaoProtocol.response(sliced.prefix(count)))
+      }
+      var invalid=sliced; invalid[invalid.startIndex]=0xff
+      XCTAssertThrowsError(try DoubaoProtocol.response(invalid))
+    }
+    let fixture=try gzipFixture(), gzip=try XCTUnwrap(Data(base64Encoded:try XCTUnwrap(fixture["gzip"])))
+    let compressed=doubaoWire(gzip,flags:3,sequence:-3,compression:1)
+    let storage=Data(repeating:0,count:16)+compressed
+    XCTAssertEqual(try DoubaoProtocol.response(storage.dropFirst(16)).text,"豆包原生润色测试。")
+  }
   func testDoubaoGzipServerResponseUsesIndependentCompressedFixture() throws {
     let fixture=try gzipFixture(), gzip=try XCTUnwrap(Data(base64Encoded:try XCTUnwrap(fixture["gzip"])))
     let result=try DoubaoProtocol.response(doubaoWire(gzip,flags:3,sequence:-3,compression:1))
