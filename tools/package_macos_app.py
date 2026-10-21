@@ -35,9 +35,11 @@ def main():
     helper_info=plistlib.loads((fresh/'Contents/Resources/SquirrelVoiceHelper.app/Contents/Info.plist').read_bytes())
     forbidden=[str(p.relative_to(fresh)) for p in fresh.rglob('*') if p.is_file() and
                (p.name=='settings.json' or '.userdb' in p.name or p.suffix=='.log')]
-    hashes={str(p.relative_to(fresh)):hashlib.sha256(p.read_bytes()).hexdigest() for p in
-       [fresh/'Contents/MacOS/SquirrelEnhancedDev',fresh/'Contents/MacOS/SquirrelLetterProbe',
-        fresh/'Contents/Resources/SquirrelVoiceHelper.app/Contents/MacOS/SquirrelVoiceHelper',fresh/'Contents/Frameworks/librime.1.dylib']}
+    # The build manifest also includes the precompiled public dictionary tables.
+    # Verify that same complete set after extraction, not an obsolete subset
+    # of four executables/libraries that can never equal the current manifest.
+    hashes={name:hashlib.sha256((fresh/name).read_bytes()).hexdigest()
+            for name in provenance['binary_sha256']}
     build=json.loads((ROOT/'evidence/macos-build.json').read_text())
     passed=all(x['exit_code']==0 for x in checks) and value.returncode==0 and probe['passed']==14 and probe['failed']==0
     passed &= 'com.apple.security.device.audio-input' in checks[1]['output'] and not forbidden
@@ -50,7 +52,7 @@ def main():
         candidate.replace(archive)
     verified_archive=archive if passed else candidate
     report={'utc':datetime.now(timezone.utc).isoformat(),
-      'layer':'fresh unzipped ad-hoc app signatures plus bundled real-Rime C API worker; NOT installed IMK/microphone/cloud',
+      'layer':'fresh unzipped app signatures and complete build manifest plus bundled real-Rime C API worker; NOT installed IMK/microphone/cloud',
       'archive':str(verified_archive),'archive_sha256':hashlib.sha256(verified_archive.read_bytes()).hexdigest(),
       'bytes':verified_archive.stat().st_size,'extracted':str(stage),'checks':checks,'probe_argv':argv,
       'probe_exit_code':value.returncode,'probe':probe,'probe_stderr':value.stderr,

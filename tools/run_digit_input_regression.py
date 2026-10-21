@@ -114,6 +114,17 @@ def main():
                 key("2"); key("k"); _,state=key(0xff0d)
                 assert state["commit"]=="你好shijie2k" and not state["input"],state
             case(f"{schema}_confirmed_prefix_and_literal_suffix",partial)
+            def partial_backspace(schema=schema):
+                start(schema); typing("nihaoshijie"); _,opened=key(" ")
+                for _ in range(30):
+                    if "你好" in opened["candidates"]: break
+                    _,opened=key(0xff56)
+                assert "你好" in opened["candidates"],opened
+                key(opened["original_keys"][opened["candidates"].index("你好")])
+                key("2"); key(0xff50); key(0xff08)
+                _,state=key(0xff0d)
+                assert state["commit"] == "你好shijie2",state
+            case(f"{schema}_literal_backspace_at_confirmed_boundary",partial_backspace)
             def disabled(schema=schema):
                 start(schema); r.set_option(sid, b"letter_selection_disabled", 1)
                 state = typing("ni"); assert state["candidates"], state

@@ -445,6 +445,89 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
     }
 #if CANDIDATE_RECOVERY_PROBE
     do {
+      let original = KeyboardProbeClient(), controller = newController(KeyboardProbeClient())
+      controller.activateServer(original.proxy)
+      weak var transientClient: KeyboardProbeClient?
+      autoreleasepool {
+        let transient = KeyboardProbeClient()
+        transientClient = transient
+        for (text, code) in [("n", UInt16(0)), ("i", 0), (" ", 49)] {
+          _ = controller.handle(event(text, code:code), client:transient)
+        }
+      }
+      check("deferred_display_retains_callback_scoped_client_until_query", transientClient != nil)
+      pump()
+      check("callback_scoped_client_can_present_candidates", delegate.panel!.isVisible)
+      check("completed_display_does_not_retain_host_client", transientClient == nil)
+      controller.deactivateServer(original.proxy)
+    }
+    // The IMK key-event recipient is authoritative even when activation
+    // notifications for auxiliary text clients arrive in a different order.
+    for activateFirst in [false, true] {
+      let client = KeyboardProbeClient(), auxiliary = KeyboardProbeClient()
+      let controller = newController(client), other = newController(auxiliary)
+      if activateFirst { controller.activateServer(client.proxy) }
+      other.activateServer(auxiliary.proxy)
+      let lateRelease = NSEvent.keyEvent(with:.keyUp,location:.zero,modifierFlags:[],
+        timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:0,context:nil,
+        characters:"x",charactersIgnoringModifiers:"x",isARepeat:false,keyCode:7)!
+      _ = controller.handle(lateRelease,client:client.proxy)
+      check("late_key_release_cannot_reclaim_panel_ownership_\(activateFirst)", EnhancementBridge.shared.input === other)
+      _ = send(controller, client, "n"); _ = send(controller, client, "i")
+      _ = send(controller, client, " ", code:49); pump()
+      check("key_recipient_recovers_panel_ownership_\(activateFirst)",
+        delegate.panel!.isVisible && delegate.panel!.inputController === controller)
+      other.deactivateServer(auxiliary.proxy)
+      check("late_auxiliary_blur_preserves_key_recipient_panel_\(activateFirst)",
+        delegate.panel!.isVisible && delegate.panel!.inputController === controller)
+      _ = send(controller, client, "a")
+      check("ownership_recovery_keeps_original_commit_target_\(activateFirst)",
+        client.committed == "你" && auxiliary.committed.isEmpty && client.fallback.isEmpty)
+      controller.deactivateServer(client.proxy)
+    }
+    do {
+      let oldClient = KeyboardProbeClient(), recentClient = KeyboardProbeClient()
+      let oldWindow = newController(oldClient), recentWindow = newController(recentClient)
+      oldWindow.activateServer(oldClient.proxy)
+      _ = send(oldWindow, oldClient, "n"); _ = send(oldWindow, oldClient, "i")
+      _ = send(oldWindow, oldClient, " ", code:49); pump(); _ = send(oldWindow, oldClient, "a")
+      recentWindow.activateServer(recentClient.proxy)
+      for _ in 0..<10 {
+        _ = send(recentWindow, recentClient, "n"); _ = send(recentWindow, recentClient, "i")
+        _ = send(recentWindow, recentClient, " ", code:49); pump(0.005)
+        _ = send(recentWindow, recentClient, "a")
+      }
+      // Return to the existing IMK controller without a fresh activateServer.
+      // Keep typing whole words: the pre-fix failure persists, not just a slow
+      // first frame. No wall-clock sleep is needed to model the idle state.
+      var visible = 0
+      for _ in 0..<20 {
+        _ = send(oldWindow, oldClient, "n"); _ = send(oldWindow, oldClient, "i")
+        _ = send(oldWindow, oldClient, " ", code:49); pump(0.005)
+        if delegate.panel!.isVisible && delegate.panel!.inputController === oldWindow { visible += 1 }
+        _ = send(oldWindow, oldClient, "a")
+      }
+      check("return_to_existing_window_shows_all_twenty_compositions_without_switching", visible == 20)
+      check("return_to_existing_window_keeps_all_commits_in_correct_clients",
+        oldClient.committed == String(repeating:"你",count:21) &&
+        recentClient.committed == String(repeating:"你",count:10) && oldClient.fallback.isEmpty)
+      oldWindow.deactivateServer(oldClient.proxy); recentWindow.deactivateServer(recentClient.proxy)
+    }
+    do {
+      let client = KeyboardProbeClient(), controller = newController(KeyboardProbeClient())
+      controller.activateServer(client.proxy)
+      _ = send(controller, client, "n"); _ = send(controller, client, "i")
+      _ = send(controller, client, " ", code:49)
+      // Deployment/session invalidation between scheduling and execution
+      // must release the coalescing slot, not block all future presentations.
+      controller.enhancementWillDeploy(); pump()
+      let before = client.geometryQueries
+      _ = send(controller, client, "=", code:24); pump()
+      check("generation_change_cannot_wedge_future_panel_updates",
+        client.geometryQueries > before && delegate.panel!.isVisible)
+      controller.deactivateServer(client.proxy)
+    }
+    do {
       let first = KeyboardProbeClient(), rotated = KeyboardProbeClient()
       let controller = newController(first)
       controller.activateServer(first.proxy)

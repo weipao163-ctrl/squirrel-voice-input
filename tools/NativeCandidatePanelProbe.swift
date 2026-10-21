@@ -48,6 +48,52 @@ final class SquirrelInputController {
     if CommandLine.arguments.contains("--empty-only") { return }
     }
 
+    try writeConfig("[label] [candidate] [comment]",showPaging:false)
+    guard config.openBaseConfig() else { fatalError("Template fixture unavailable") }
+    panel.load(config:config,forDarkMode:false); panel.load(config:config,forDarkMode:true)
+    for candidate in ["[comment]", "保留[comment]和[label]与[candidate]"] {
+      panel.update(preedit:"",selRange:.empty,caretPos:0,candidates:[candidate],comments:["注释"],
+        labels:["a"],highlighted:0,page:0,lastPage:true,update:true)
+      let rendered = panel.contentView?.subviews.compactMap { $0 as? NSTextView }.first?.textContentStorage?.attributedString?.string
+      checks.append(["name":"candidate_template_tokens_remain_literal_\(candidate)", "passed":rendered == "a " + candidate + " 注释", "rendered_fixture":rendered ?? "<nil>"])
+    }
+    panel.hide(); config.close()
+
+    try "style:\n  font_point: 16\n  hilited_corner_radius: 0\n  corner_radius: 6\n  surrounding_extra_expansion: 3\n  color_scheme: expanded\npreset_color_schemes:\n  expanded:\n    candidate_back_color: 0xffffff\n    hilited_candidate_back_color: 0xff0000\n".write(to:fixture,atomically:true,encoding:.utf8)
+    guard config.openBaseConfig() else { fatalError("Expanded fixture unavailable") }
+    let expandedView = SquirrelView(frame:NSRect(x:0,y:0,width:180,height:80))
+    expandedView.lightTheme.load(config:config,dark:false); expandedView.darkTheme.load(config:config,dark:false)
+    expandedView.textContentStorage.attributedString = NSAttributedString(string:"候选一\n候选二",attributes:[.font:NSFont.systemFont(ofSize:16)])
+    expandedView.textContainer.size = NSSize(width:180,height:80)
+    expandedView.textLayoutManager.ensureLayout(for:expandedView.textLayoutManager.documentRange)
+    expandedView.drawView(candidateRanges:[NSRange(location:0,length:3),NSRange(location:4,length:3)],
+      hilightedIndex:0,preeditRange:.empty,highlightedPreeditRange:.empty,canPageUp:false,canPageDown:false)
+    expandedView.draw(expandedView.bounds)
+    var validPaths = true, pathCount = 0
+    func inspectPaths(_ layer:CALayer) {
+      if let path = (layer as? CAShapeLayer)?.path {
+        pathCount += 1
+        path.applyWithBlock { element in
+          let count:Int
+          switch element.pointee.type {
+          case .moveToPoint,.addLineToPoint: count=1
+          case .addQuadCurveToPoint: count=2
+          case .addCurveToPoint: count=3
+          case .closeSubpath: count=0
+          @unknown default: count=0
+          }
+          for index in 0..<count {
+            let point=element.pointee.points[index]
+            validPaths = validPaths && point.x.isFinite && point.y.isFinite
+          }
+        }
+      }
+      for child in layer.sublayers ?? [] { inspectPaths(child) }
+    }
+    if let layer=expandedView.layer { inspectPaths(layer) }
+    check("square_candidate_with_expansion_has_finite_paths",validPaths && pathCount >= 3)
+    config.close()
+
     let cached = SquirrelConfig()
     try writeConfig("[candidate]",showPaging:true)
     guard cached.openBaseConfig() else { fatalError("Fixture unavailable") }
