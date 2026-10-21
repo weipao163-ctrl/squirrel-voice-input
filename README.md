@@ -2,9 +2,11 @@
 macos系统下当前唯一一款支持字母选词的中文输入法
 基于 [Rime / Squirrel](https://github.com/rime/squirrel) 的 macOS 输入法扩展，让拼音输入、空格进入字母选词，以及按住热键说话在同一套输入法中协作。
 
-这是社区衍生项目，并非 Rime、阿里云或火山引擎的官方产品。当前源码版本为 **0.1.33**，主程序运行要求 **macOS 13+**；已构建与使用验证的主要环境为 Apple Silicon。Git 代码区提供源码、开发文档、测试及公开默认资源；[Releases](https://github.com/weipao163-ctrl/squirrel-voice-input/releases) 提供可安装的 Apple Silicon 安装包。**源码和安装包均不包含个人词库或预置 API Key**。
+这是社区衍生项目，并非 Rime、阿里云或火山引擎的官方产品。当前源码版本为 **0.1.35**，主程序运行要求 **macOS 13+**；已构建与使用验证的主要环境为 Apple Silicon。Git 代码区提供源码、开发文档、测试及公开默认资源；[Releases](https://github.com/weipao163-ctrl/squirrel-voice-input/releases) 提供可安装的 Apple Silicon 安装包。**源码和安装包均不包含个人词库或预置 API Key**。
 
-0.1.33 提高光标定位恢复能力：兼容系统允许的反向矩形，连续更新候选时保留同一轮有限重试；原生坐标不可用时，使用已有辅助功能权限异步查询当前选区边界。短时坐标缓存只用于候选窗显示，失焦、导航、滚动、窗口或屏幕变化会使其失效。普通拼音按键不等待 AX；详见[定位可靠性与性能验证](docs/2026-10-15_fix-caret-reliability-report.md)。
+0.1.35 完成自有运行时代码复查，修复候选文字被格式模板误替换，以及豆包解码器处理带偏移数据切片时的崩溃边界；详见[源码审查报告](docs/2026-10-16_audit-source-report.md)。
+
+0.1.34 修复返回长时间未激活的窗口后，文字能上屏但候选窗持续消失的问题：按实际收键恢复显示归属，清理过期任务，并保留客户端到当次绘制结束。普通按键不新增坐标、辅助功能或网络调用；详见[候选窗持续不可见修复](docs/2026-10-16_fix-candidate-visibility-report.md)。
 
 0.1.32 修复偶发“文字能上屏、按空格却看不到候选窗”：光标坐标短暂丢失时显示屏幕下方中央的候选窗，重试获得坐标后恢复到光标旁；提交、取消和失焦仍正常隐藏。详见[候选窗可见性修复报告](docs/2026-10-15_fix-candidate-visibility-report.md)。
 
@@ -26,7 +28,9 @@ macos系统下当前唯一一款支持字母选词的中文输入法
 
 ## 下载与安装
 
-从 [v0.1.33 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.33) 下载 `.pkg` 安装包及 SHA-256 校验文件，按照 [安装说明](docs/INSTALLATION.md) 安装。适用于 **Apple Silicon（M 系列）与 macOS 13+**；本次没有 Intel 安装包。
+0.1.35 包含候选窗恢复与源码边界修复，源码、完整安装包和校验文件同步发布。
+
+从 [v0.1.35 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.35) 下载 `.pkg` 安装包及 SHA-256 校验文件，按照 [安装说明](docs/INSTALLATION.md) 安装。适用于 **Apple Silicon（M 系列）与 macOS 13+**；本次没有 Intel 安装包。
 
 **首次安装需要手动允许：安装包未使用 Apple Developer ID 签名或公证，若 macOS 拦截，请在「系统设置 → 隐私与安全（性）」点击「仍要打开」并确认安装。** 不需要关闭系统安全保护。具体步骤见 [Apple 官方说明](https://support.apple.com/zh-cn/102445)。
 
