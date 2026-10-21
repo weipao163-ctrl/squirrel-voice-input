@@ -271,10 +271,19 @@ final class SquirrelPanel: NSPanel {
           line.addAttributes(commentAttrs, range: convertedRange)
         }
       }
-      line.mutableString.replaceOccurrences(of: "[label]", with: label, range: NSRange(location: 0, length: line.length))
-      let labeledLine = line.copy() as! NSAttributedString
-      line.mutableString.replaceOccurrences(of: "[candidate]", with: candidate, range: NSRange(location: 0, length: line.length))
-      line.mutableString.replaceOccurrences(of: "[comment]", with: comment, range: NSRange(location: 0, length: line.length))
+      // Only the original format contains instructions. Candidate/comment/label
+      // text is literal data, even if it contains one of our placeholder names.
+      let template = line.string
+      let labelPrefix = template.firstMatch(of: /\[(candidate|comment)\]/).map { match in
+        let prefix = line.attributedSubstring(from: NSRange(location: 0,
+          length: match.range.lowerBound.utf16Offset(in: template))).mutableCopy() as! NSMutableAttributedString
+        prefix.mutableString.replaceOccurrences(of: "[label]", with: label, range: NSRange(location: 0, length: prefix.length))
+        return prefix
+      }
+      for match in template.matches(of: /\[(label|candidate|comment)\]/).reversed() {
+        let replacement = match.output.1 == "label" ? label : (match.output.1 == "candidate" ? candidate : comment)
+        line.replaceCharacters(in: convert(range: match.range, in: template), with: replacement)
+      }
 
       if line.length > 1 && line.length <= 10 {
         line.addAttribute(.noBreak, value: true, range: NSRange(location: 1, length: line.length-1))
@@ -295,9 +304,8 @@ final class SquirrelPanel: NSPanel {
         paragraphStyleCandidate.paragraphSpacingBefore -= theme.linespace
         paragraphStyleCandidate.lineSpacing = theme.linespace
       }
-      if !linear, let labelEnd = labeledLine.string.firstMatch(of: /\[(candidate|comment)\]/)?.range.lowerBound {
-        let labelString = labeledLine.attributedSubstring(from: NSRange(location: 0, length: labelEnd.utf16Offset(in: labeledLine.string)))
-        let labelWidth = labelString.boundingRect(with: .zero, options: [.usesLineFragmentOrigin]).width
+      if !linear, let labelPrefix {
+        let labelWidth = labelPrefix.boundingRect(with: .zero, options: [.usesLineFragmentOrigin]).width
         paragraphStyleCandidate.headIndent = labelWidth
       }
       line.addAttribute(.paragraphStyle, value: paragraphStyleCandidate, range: NSRange(location: 0, length: line.length))

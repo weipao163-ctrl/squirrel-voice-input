@@ -88,6 +88,10 @@ final class SquirrelInputController: IMKInputController {
     var handled = false
 
     self.client ?= sender as? IMKTextInput
+    // IMK can activate an auxiliary client after the editor's controller.
+    // Actual input delivery is stronger evidence than activation ordering.
+    // Key-up alone must not let a late release reclaim another editor's UI.
+    claimInputPresentation(for: event)
     if !ensureRimeSession() { return deferStartupInput(event) }
     if !startupEvents.isEmpty { replayStartupInput() }
     if let app = inputApplicationIdentifier(client), currentApp != app {
@@ -217,6 +221,21 @@ final class SquirrelInputController: IMKInputController {
   override func recognizedEvents(_ sender: Any!) -> Int {
     if inputApplicationIdentifier(sender as? IMKTextInput) == Self.settingsBundleID { return 0 }
     return Int(NSEvent.EventTypeMask.Element(arrayLiteral: .keyDown, .keyUp, .flagsChanged).rawValue)
+  }
+
+  private func claimInputPresentation(for event: NSEvent) {
+    guard client != nil, EnhancementBridge.shared.input !== self else { return }
+    guard event.type == .keyDown || (event.type == .flagsChanged &&
+      SquirrelKeycode.modifierKeycodes.contains(event.keyCode) &&
+      CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(event.keyCode))) else { return }
+    if let previous = EnhancementBridge.shared.input as? SquirrelInputController {
+      previous.cancelPanelPositionUpdate()
+      previous.enhancementInvalidated()
+      if let panel = NSApp.squirrelAppDelegate.panel, panel.inputController === previous { panel.hide() }
+    }
+    cancelPanelPositionUpdate()
+    EnhancementBridge.shared.input = self
+    CandidatePositionStatistics.shared.increment("input_owner_recovered")
   }
 
   override func activateServer(_ sender: Any!) {
@@ -475,6 +494,7 @@ private extension SquirrelInputController {
   }
 
   func createSession() {
+    cancelPanelPositionUpdate()
     enhancementInvalidated(); inputGeneration += 1; cleanReleasedPhysicalKeys()
     let app = inputApplicationIdentifier(client) ?? {
       SquirrelInputController.unknownAppCnt &+= 1
@@ -881,9 +901,16 @@ private extension SquirrelInputController {
     }
     guard panelPositionWork == nil else { return }
     let request = panelRequest, generation = inputGeneration
-    let work = DispatchWorkItem { [weak self, weak client] in
-      guard let self, let client, self.panelPositionCurrent(request, generation, client) else { return }
+    // IMK may lend a callback-scoped proxy. Keep it only through this bounded
+    // display task; a weak capture can vanish between the key and the query.
+    let work = DispatchWorkItem { [weak self, client] in
+      guard let self, self.panelRequest == request else { return }
+      // Release this scheduling slot even if its client/generation expired.
+      // Otherwise every later showPanel sees a non-nil completed work item.
       self.panelPositionWork = nil
+      guard self.panelPositionCurrent(request, generation, client) else {
+        CandidatePositionStatistics.shared.increment("stale_display_work_released"); return
+      }
       self.candidatePositionRecovery.startMonitoring { [weak self] in
         guard let self else { return }
         self.cancelPanelPositionUpdate()
@@ -917,6 +944,13 @@ private extension SquirrelInputController {
     report["panel_visible"] = panel?.inputController === self && panel?.isVisible == true
     report["composition_present"] = !preedit.isEmpty
     report["retry_pending"] = panelRetryWork != nil
+    report["display_work_pending"] = panelPositionWork != nil
+    report["presentation_pending"] = panelPresentation != nil
+    report["panel_owned_by_controller"] = panel?.inputController === self
+    report["panel_frame_on_screen"] = panel.map { panel in
+      NSScreen.screens.contains { $0.visibleFrame.intersects(panel.frame) } &&
+        panel.frame.width > 0 && panel.frame.height > 0 && panel.alphaValue > 0
+    } ?? false
     return report
   }
 
@@ -988,9 +1022,13 @@ private extension SquirrelInputController {
     panelRetrying = true
     let delay = Self.panelPositionRetryDelays[panelRetryAttempt]
     panelRetryAttempt += 1
-    let work = DispatchWorkItem { [weak self, weak client] in
-      guard let self, let client, self.panelPositionCurrent(request, generation, client) else { return }
+    let work = DispatchWorkItem { [weak self, client] in
+      guard let self, self.panelRequest == request else { return }
       self.panelRetryWork = nil
+      guard self.panelPositionCurrent(request, generation, client) else {
+        self.panelRetrying = false; self.panelRetryAttempt = 0
+        CandidatePositionStatistics.shared.increment("stale_display_retry_released"); return
+      }
       CandidatePositionStatistics.shared.increment("retries")
       self.updatePanelPosition(request: request, generation: generation, client: client)
     }
@@ -1338,5 +1376,8 @@ extension SquirrelInputController: EnhancementInput {
   func enhancementIsBusy() -> Bool { enhancementComposing() || (voiceIdentity != nil && !voiceTerminal) }
   func enhancementCurrentSchema() -> String { schemaId }
   func enhancementOwnsVoice(_ identity:VoiceIdentity) -> Bool { voiceIdentity == identity && !voiceTerminal }
-  func enhancementWillDeploy() { enhancementInvalidated(); inputGeneration += 1; cleanReleasedPhysicalKeys() }
+  func enhancementWillDeploy() {
+    cancelPanelPositionUpdate()
+    enhancementInvalidated(); inputGeneration += 1; cleanReleasedPhysicalKeys()
+  }
 }
