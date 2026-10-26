@@ -3,6 +3,7 @@ import EnhancementCore
 import EnhancementIPC
 import EnhancementUI
 import AVFoundation
+import Combine
 private final class FakeConnectionProbe:ConnectionProbeTask {
   var cancelled=false
   func cancel() { cancelled=true }
@@ -21,6 +22,13 @@ private final class FakeVoiceSession:VoiceSession {
   func cancel() { cancellations += 1; finish(.cancelled) }
   func renewLease() { leases += 1 }
   func clearDiagnostics() {}
+  func pulse(_ number:Int) {
+    let now=ProcessInfo.processInfo.systemUptime
+    let timeline=VoiceDiagnosticTimeline(identity:identity,revision:nil,mode:.production,
+      origin:.helperStart,referenceUptime:now)
+    update(VoiceUpdate(identity:identity,phase:.recording,text:"离线夹具",complete:false,
+      level:Double(number%100)/100,duration:Double(number)/100),timeline.snapshot(phase:.recording))
+  }
   func finish(_ phase:VoicePhase) {
     let now=ProcessInfo.processInfo.systemUptime
     var timeline=VoiceDiagnosticTimeline(identity:identity,revision:nil,mode:.production,
@@ -230,6 +238,13 @@ private final class FakeVoiceSession:VoiceSession {
     check("closing_background_settings_does_not_cancel_production",productionModel.confirmClosing() && sessions.first?.cancellations == 0)
     settingsWindow?.close()
     check("background_window_close_notification_preserves_production",sessions.first?.cancellations == 0)
+    var hiddenPresentationNotifications=0
+    let observation=productionModel.objectWillChange.sink { hiddenPresentationNotifications += 1 }
+    for number in 0..<10_000 { sessions.first?.pulse(number) }
+    check("closed_settings_does_not_publish_ten_thousand_voice_updates",hiddenPresentationNotifications == 0)
+    productionModel.refreshVoicePresentation()
+    check("reopening_presents_only_latest_voice_status",productionModel.status.contains("100.0") && productionModel.level == 0.99 && productionModel.diagnostic?.identity == productionID)
+    observation.cancel()
     sessions.first?.finish(.ready)
     let nextID=VoiceIdentity(generation:4)
     try beginProduction(nextID)
