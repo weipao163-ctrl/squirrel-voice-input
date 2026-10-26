@@ -124,3 +124,7 @@ python3 tools/run_native_voice_target.py
 `--controller-source` 允许在同一构建环境载入旧控制器，旧版只执行原有 56 项通用检查。性能段固定测试 `nihao` 后 Esc，包含 24,000 次 down/up 事件、100 个新控制器、500 次激活和进程资源采样；这是夹具内耗时，不是物理键盘或目标软件端到端延迟。见[本版报告](2026-10-15_fix-caret-reliability-report.md)。
 
 已安装应用可运行 `--candidate-position-stats` 读取最多 64 个样本的内存统计；`--candidate-position-check` 显式查询当前前台客户端的原生/AX 坐标可用性。命令不录音、不调用云服务、不读取正文、不插入字符、不显示或移动候选窗；检查前应在普通文本框中选中增强版输入法。
+
+## 0.1.36 助手内存回归
+
+构建 Helper 模块后运行 `python3 tools/run_helper_memory_probe.py --mode closed --label memory-closed`。另以 `hidden` 和 `miniaturized` 检查隐藏和最小化。该检查使用原生设置界面、6,000 次合成状态更新和 20 次开关，记录物理内存足迹；不使用麦克风、Keychain 或语音网络服务。见[内存修复报告](2026-10-26_fix-helper-memory-report.md)。

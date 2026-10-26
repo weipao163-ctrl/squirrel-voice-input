@@ -1,6 +1,6 @@
 # 安装鼠须管语音增强输入法
 
-0.1.35 为候选窗恢复及源码复查修复版，完整安装包为 `SquirrelVoiceInput-0.1.20261016.35-arm64.pkg`。源码与构建完成于 2026-10-16，发布于 2026-10-21。
+0.1.36 修复关闭设置后频繁语音输入导致助手内存持续增长的问题，完整安装包为 `SquirrelVoiceInput-0.1.20261026.36-arm64.pkg`。源码、构建与发布完成于 2026-10-26。
 
 ## 系统要求与下载
 
@@ -8,13 +8,13 @@
 - 一个具有管理员安装权限的本地用户；安装目标是当前登录用户。
 - 语音功能需要自行开通的百炼或火山引擎语音服务及对应凭据。
 
-从 [v0.1.35 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.35) 下载 `.pkg` 与同名 `.pkg.sha256`。将两者放在同一目录，在该目录执行：
+从 [v0.1.36 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.36) 下载 `.pkg` 与同名 `.pkg.sha256`。将两者放在同一目录，在该目录执行：
 
 ```bash
-shasum -a 256 -c SquirrelVoiceInput-0.1.20261016.35-arm64.pkg.sha256
+shasum -a 256 -c SquirrelVoiceInput-0.1.20261026.36-arm64.pkg.sha256
 ```
 
-确认显示 `OK`，再双击安装包。应用版本为 0.1.35，Installer 的构建版本为 0.1.20261016.35。
+确认显示 `OK`，再双击安装包。应用版本为 0.1.36，Installer 的构建版本为 0.1.20261026.36。
 
 ## 首次安装的系统放行
 
