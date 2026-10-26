@@ -3,24 +3,67 @@ import SwiftUI
 import EnhancementCore
 import ApplicationServices
 
+private final class SettingsNativeWindow:NSWindow {
+  var willHideContent:(()->Void)?
+  override func orderOut(_ sender:Any?) {
+    // An already-occluded window may not emit another occlusion notification.
+    willHideContent?()
+    super.orderOut(sender)
+  }
+}
+
 final class SettingsWindow: NSWindowController, NSWindowDelegate {
   private let model: HelperModel
+  private var contentAttached = false
   init(model: HelperModel) {
     self.model = model
-    let window = NSWindow(contentRect:NSRect(x:0,y:0,width:760,height:760),
+    let window = SettingsNativeWindow(contentRect:NSRect(x:0,y:0,width:760,height:760),
                           styleMask:[.titled,.closable,.resizable,.miniaturizable], backing:.buffered, defer:false)
     window.title = "鼠须管增强输入设置（开发隔离版）"
+    window.autorecalculatesKeyViewLoop = true
+    window.minSize = NSSize(width:620,height:560); window.center()
+    super.init(window:window); window.delegate = self
+    window.willHideContent = { [weak self] in self?.detachContent() }
+    attachContent()
+  }
+  required init?(coder:NSCoder) { nil }
+  private func attachContent() {
+    guard !contentAttached, let window else { return }
+    model.refreshVoicePresentation()
     let hosting = NSHostingView(rootView: SettingsView(model:model))
     // Let the window constrain layout; long Form rows must not expand it off-screen.
     hosting.sizingOptions = []
     window.contentView = hosting
-    window.autorecalculatesKeyViewLoop = true
-    window.minSize = NSSize(width:620,height:560); window.center()
-    super.init(window:window); window.delegate = self
+    contentAttached = true
   }
-  required init?(coder:NSCoder) { nil }
+  private func detachContent() {
+    guard contentAttached else { return }
+    // A closed NSWindowController keeps its window alive. Keeping a hidden
+    // hosting tree subscribed to live updates queues SwiftUI graph mutations
+    // indefinitely on some macOS versions. Release that tree, not user state.
+    window?.makeFirstResponder(nil)
+    window?.contentView = NSView()
+    contentAttached = false
+  }
+  override func showWindow(_ sender:Any?) {
+    attachContent()
+    super.showWindow(sender)
+  }
   func windowShouldClose(_ sender:NSWindow) -> Bool { model.confirmClosing() }
-  func windowWillClose(_ notification:Notification) { model.stopSettingsActivity() }
+  func windowWillClose(_ notification:Notification) {
+    model.stopSettingsActivity(); detachContent()
+  }
+  func windowDidMiniaturize(_ notification:Notification) {
+    model.stopSettingsActivity(); detachContent()
+  }
+  func windowDidDeminiaturize(_ notification:Notification) { attachContent() }
+  func windowDidChangeOcclusionState(_ notification:Notification) {
+    guard let window else { return }
+    if !window.isVisible || window.isMiniaturized { detachContent() }
+    else if window.occlusionState.contains(.visible) {
+      attachContent(); model.refreshVoicePresentation()
+    }
+  }
 }
 
 struct HoldButton: NSViewRepresentable {
@@ -269,7 +312,6 @@ struct SettingsView: View {
   @State private var deployConfirm = false
   @State private var migrateConfirm = false
   @State private var recoveryConfirm = false
-  @State private var tab = 0
   private var profile:Binding<LetterProfile> {
     Binding(get:{ model.draft.letters[model.selectedSchema] ?? LetterProfile() },
             set:{ if !model.selectedSchema.isEmpty { model.draft.letters[model.selectedSchema] = $0 } })
@@ -287,7 +329,7 @@ struct SettingsView: View {
     VStack(alignment:.leading,spacing:12) {
       Text("增强输入设置").font(.title2)
       Text("隔离开发目录，不修改 ~/Library/Rime。两项功能独立，语音默认关闭；任何测试结论均按实际层级显示。").foregroundStyle(.secondary)
-      TabView(selection:$tab) {
+      TabView(selection:$model.settingsTab) {
         ScrollView {
           Form {
             Text(model.schemaSource).font(.caption)
@@ -491,7 +533,7 @@ struct SettingsView: View {
         Button("恢复非秘密默认值") { model.defaults() }
       }
     }.padding(18)
-      .onChange(of:tab) { _ in model.stopAll(cancel:true) }
+      .onChange(of:model.settingsTab) { _ in model.stopAll(cancel:true) }
       .onChange(of:model.draft.voice.enabled) { enabled in if !enabled { model.stopAll(cancel:true) } }
       .alert("删除所选服务的密钥？",isPresented:$deleteConfirm) {
         Button("取消",role:.cancel) {}

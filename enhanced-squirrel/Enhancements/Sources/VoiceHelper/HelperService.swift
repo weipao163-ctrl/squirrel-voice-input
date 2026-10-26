@@ -23,6 +23,7 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
   let fonts = NSFontManager.shared.availableFonts.sorted()
   @Published var schemas: [String] = []
   @Published var selectedSchema = ""
+  @Published var settingsTab = 0
   @Published var schemaSource = "源文件列表（未连接真实 Rime）"
   @Published private(set) var preview = ""
   @Published private(set) var previewIsComplete=false
@@ -52,6 +53,9 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
   @Published var applicationState = "输入法尚未确认配置；文件保存与运行应用分别报告。"
   @Published private(set) var diagnostic:VoiceDiagnosticSnapshot?
   private var diagnosticStore=VoiceDiagnosticStore()
+  // One latest presentation only, independent of the lifetime of the settings
+  // view. Production preview/IPC still receives every update immediately.
+  private var pendingVoicePresentation:(level:Double,status:String)?
   private var productionAdmission=VoiceRequestAdmission()
   let store: SettingsStore
   let credentials = CredentialStore()
@@ -289,6 +293,18 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
     diagnosticStore.clear(); diagnostic=nil; active?.clearDiagnostics()
     // No transcript/credential/settings side effect; queued current-session
     // diagnostic updates cannot repopulate a cleared record.
+  }
+  func refreshVoicePresentation() {
+    if diagnostic != diagnosticStore.latest { diagnostic=diagnosticStore.latest }
+    if let value=pendingVoicePresentation {
+      if level != value.level { level=value.level }
+      if status != value.status { status=value.status }
+      pendingVoicePresentation=nil
+    }
+  }
+  private var settingsPresentationVisible:Bool {
+    guard let window=windowController?.window else { return false }
+    return window.isVisible && !window.isMiniaturized && window.occlusionState.contains(.visible)
   }
   func discardTestDraft() {
     testDrafts.discard(); preview=""; previewIsComplete=false
@@ -529,10 +545,10 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
     if test { replacedTestDraft=testDrafts.begin(identity) }
     else { testDrafts.clear(); replacedTestDraft=false }
     preview=""; previewIsComplete=false
-    diagnosticStore.begin(identity); diagnostic=nil
+    diagnosticStore.begin(identity); diagnostic=nil; pendingVoicePresentation=nil
     let stream=sessionFactory(identity,settings,test,test ? nil : saved.revision,pressUptime) { [weak self] update, snapshot in
       guard let self, self.activeID == update.identity else { return }
-      if self.diagnosticStore.accept(snapshot) { self.diagnostic=self.diagnosticStore.latest }
+      _ = self.diagnosticStore.accept(snapshot)
       let discard = self.discardPreviewSession == update.identity || (self.testSession && update.phase == .cancelled)
       if self.testSession {
         if discard { self.testDrafts.discard() }
@@ -540,10 +556,11 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
           self.preview=self.testDrafts.text; self.previewIsComplete=self.testDrafts.complete
         }
       } // Production text is routed only to the native preview, never the GUI test result.
-      self.level = update.level
-      self.status = "\(update.phase.title) · \(String(format: "%.1f", update.duration)) 秒\n\(update.message)"
+      var status = "\(update.phase.title) · \(String(format: "%.1f", update.duration)) 秒\n\(update.message)"
+      if self.testSession && self.replacedTestDraft { status += "\n上一条测试草稿已被本次录音替换，不保存历史。" }
+      self.pendingVoicePresentation=(update.level,status)
+      if self.testSession || self.settingsPresentationVisible { self.refreshVoicePresentation() }
       if self.testSession { self.renderTestVoiceUpdate(update) }
-      if self.testSession && self.replacedTestDraft { self.status += "\n上一条测试草稿已被本次录音替换，不保存历史。" }
       if !self.testSession, let data = try? Wire.encode(update) { self.callbacks?.voiceUpdate(data) }
       if [.ready, .review, .cancelled, .failed].contains(update.phase) {
         self.diagnosticStore.end(update.identity)
@@ -570,7 +587,7 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
     guard let receipt=try? Wire.decode(VoiceDeliveryReceipt.self,result) else { return }
     DispatchQueue.main.async {
       if self.diagnosticStore.delivery(receipt,receivedAt:ProcessInfo.processInfo.systemUptime) {
-        self.diagnostic=self.diagnosticStore.latest
+        if self.settingsPresentationVisible { self.refreshVoicePresentation() }
       }
     }
   }
