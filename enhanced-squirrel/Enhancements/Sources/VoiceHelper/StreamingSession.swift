@@ -10,7 +10,7 @@ final class StreamingSession: NSObject, VoiceSession, URLSessionWebSocketDelegat
   private var transcript: TranscriptAccumulator { reducer.transcript }
   private var pcm: PCMQueue
   private let queue = DispatchQueue(label: "org.rime.voice.session")
-  private let audio = AudioCapture()
+  private let audio: VoiceAudioCapture
   private var webSocket: URLSessionWebSocketTask?
   private var urlSession: URLSession?
   private var timer: DispatchSourceTimer?
@@ -29,9 +29,9 @@ final class StreamingSession: NSObject, VoiceSession, URLSessionWebSocketDelegat
   private let test: Bool
 
   init(identity: VoiceIdentity, settings: VoiceSettings, test: Bool,
-       revision:UInt64? = nil, pressUptime:TimeInterval? = nil,
+       revision:UInt64? = nil, pressUptime:TimeInterval? = nil, audio:VoiceAudioCapture = AudioCapture(),
        update: @escaping (VoiceUpdate,VoiceDiagnosticSnapshot) -> Void) {
-    self.identity = identity; self.settings = settings; self.test = test; self.update = update
+    self.identity = identity; self.settings = settings; self.test = test; self.update = update; self.audio = audio
     reducer = VoiceEventReducer(identity:identity,settings:settings); pcm = PCMQueue(seconds: settings.queueSeconds)
     let accepted=ProcessInfo.processInfo.systemUptime; startedAt=accepted
     diagnostics=VoiceDiagnosticTimeline(identity:identity,revision:revision,mode:test ? .guiTest : .production,
@@ -58,7 +58,11 @@ final class StreamingSession: NSObject, VoiceSession, URLSessionWebSocketDelegat
           self.captureGate.unlock(); self.reducer.cancel(); self.publish("按键已释放；没有打开麦克风。"); self.cleanup(); return
         }
         self.captureGate.unlock()
-        try self.audio.start(uid: self.settings.deviceUID, pcm: { [weak self] data, level in
+        let timer = DispatchSource.makeTimerSource(queue: self.queue)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(100))
+        timer.setEventHandler { [weak self] in self?.tick() }; self.timer = timer; timer.resume()
+        self.publish()
+        self.audio.start(uid: self.settings.deviceUID, pcm: { [weak self] data, level in
           self?.queue.async {
             guard let self, !self.stopped else { return }
             do {
@@ -66,13 +70,21 @@ final class StreamingSession: NSObject, VoiceSession, URLSessionWebSocketDelegat
               if !data.isEmpty { self.diagnostics.record(.firstPCM,at:ProcessInfo.processInfo.systemUptime) }
             } catch { self.fail("音频队列超限。",reason:.audioQueue) }
           }
-        }, failure: { [weak self] message in self?.queue.async { self?.fail(message,reason:.audio) } })
-        self.diagnostics.record(.captureStarted,at:ProcessInfo.processInfo.systemUptime)
-        socket.resume(); self.receive()
-        let timer = DispatchSource.makeTimerSource(queue: self.queue)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(100))
-        timer.setEventHandler { [weak self] in self?.tick() }; self.timer = timer; timer.resume()
-        self.publish()
+        }, failure: { [weak self] message in self?.queue.async { self?.fail(message,reason:.audio) } }, completion: { [weak self] result in
+          self?.queue.async {
+            guard let self, !self.stopped else { return }
+            switch result {
+            case .failure(let error): self.fail(error.localizedDescription,reason:.audio)
+            case .success:
+              self.captureGate.lock(); let held = self.stillHeld; self.captureGate.unlock()
+              guard held else {
+                self.reducer.cancel(); self.publish("启动期间已松键；本次没有发送识别任务。"); self.cleanup(); return
+              }
+              self.diagnostics.record(.captureStarted,at:ProcessInfo.processInfo.systemUptime)
+              socket.resume(); self.receive()
+            }
+          }
+        })
       } catch { self.fail(error.localizedDescription,reason:.setup) }
     }
   }

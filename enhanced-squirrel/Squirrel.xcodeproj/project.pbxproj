@@ -7,10 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EFCAFE00000000000000000B /* LaunchAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE00000000000000000C; };
 		EFCAFE000000000000000007 /* VoiceTargetMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE000000000000000008; };
 		EFCAFE000000000000000005 /* VoiceTargetSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE000000000000000006; };
 		EFCAFE000000000000000003 /* KeyboardInputPosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE000000000000000004; };
-		EFCAFE000000000000000005 /* CandidatePositionRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE000000000000000006; };
+		EFCAFE000000000000000009 /* CandidatePositionRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE00000000000000000A; };
 		EFCAFE000000000000000001 /* NativeVoiceTargetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE000000000000000002; };
 		2C6B9F9D2BCD086700E327DF /* librime-lua.dylib in Copy Rime plugins */ = {isa = PBXBuildFile; fileRef = 2C6B9F9A2BCD086700E327DF /* librime-lua.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		2C6B9F9E2BCD086700E327DF /* librime-octagram.dylib in Copy Rime plugins */ = {isa = PBXBuildFile; fileRef = 2C6B9F9B2BCD086700E327DF /* librime-octagram.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
@@ -235,10 +236,11 @@ EE0000000000000000000009 /* EnhancementDeployment.swift in Sources */ = {isa = P
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		EFCAFE00000000000000000C /* LaunchAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sources/LaunchAdmission.swift; sourceTree = SOURCE_ROOT; };
 		EFCAFE000000000000000008 /* VoiceTargetMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTargetMonitor.swift; sourceTree = "<group>"; };
 		EFCAFE000000000000000006 /* VoiceTargetSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sources/VoiceTargetSelection.swift; sourceTree = SOURCE_ROOT; };
 		EFCAFE000000000000000004 /* KeyboardInputPosition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sources/KeyboardInputPosition.swift; sourceTree = SOURCE_ROOT; };
-		EFCAFE000000000000000006 /* CandidatePositionRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sources/CandidatePositionRecovery.swift; sourceTree = SOURCE_ROOT; };
+		EFCAFE00000000000000000A /* CandidatePositionRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sources/CandidatePositionRecovery.swift; sourceTree = SOURCE_ROOT; };
 		EFCAFE000000000000000002 /* NativeVoiceTargetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sources/NativeVoiceTargetSnapshot.swift; sourceTree = SOURCE_ROOT; };
 		1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = /System/Library/Frameworks/Cocoa.framework; sourceTree = "<absolute>"; };
 		29B97324FDCFA39411CA2CEA /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = /System/Library/Frameworks/AppKit.framework; sourceTree = "<absolute>"; };
@@ -365,7 +367,7 @@ EE000000000000000000000A /* EnhancementDeployment.swift */ = {isa = PBXFileRefer
 			children = (
 				B38E9B902BE9AE1E0036ABEF /* SquirrelApplicationDelegate.swift */,
 				EFCAFE000000000000000004 /* KeyboardInputPosition.swift */,
-				EFCAFE000000000000000006 /* CandidatePositionRecovery.swift */,
+				EFCAFE00000000000000000A /* CandidatePositionRecovery.swift */,
 				EFCAFE000000000000000008 /* VoiceTargetMonitor.swift */,
 				EFCAFE000000000000000006 /* VoiceTargetSelection.swift */,
 				EFCAFE000000000000000002 /* NativeVoiceTargetSnapshot.swift */,
@@ -373,6 +375,7 @@ EE000000000000000000000A /* EnhancementDeployment.swift */ = {isa = PBXFileRefer
 				B39771222BECEA150093A49B /* MacOSKeyCodes.swift */,
 				B397712C2BEEB39D0093A49B /* InputSource.swift */,
 				B397712E2BEECBED0093A49B /* Main.swift */,
+				EFCAFE00000000000000000C /* LaunchAdmission.swift */,
 				B39771262BED9B250093A49B /* SquirrelTheme.swift */,
 				B397712A2BEE4C160093A49B /* SquirrelPanel.swift */,
 				B39771282BEDAF4A0093A49B /* SquirrelView.swift */,
@@ -647,7 +650,7 @@ EE0000000000000000000009 /* EnhancementDeployment.swift in Sources */,
 				EE0000000000000000000005 /* EnhancementPreview.swift in Sources */,
 				EE0000000000000000000003 /* EnhancementTarget.swift in Sources */,
 				EFCAFE000000000000000003 /* KeyboardInputPosition.swift in Sources */,
-				EFCAFE000000000000000005 /* CandidatePositionRecovery.swift in Sources */,
+				EFCAFE000000000000000009 /* CandidatePositionRecovery.swift in Sources */,
 				EFCAFE000000000000000007 /* VoiceTargetMonitor.swift in Sources */,
 				EFCAFE000000000000000005 /* VoiceTargetSelection.swift in Sources */,
 				EFCAFE000000000000000001 /* NativeVoiceTargetSnapshot.swift in Sources */,
@@ -657,6 +660,7 @@ EE0000000000000000000009 /* EnhancementDeployment.swift in Sources */,
 				B38E9B952BEAFEFD0036ABEF /* SquirrelInputController.swift in Sources */,
 				B39771252BED899F0093A49B /* SquirrelConfig.swift in Sources */,
 				B397712F2BEECBED0093A49B /* Main.swift in Sources */,
+				EFCAFE00000000000000000B /* LaunchAdmission.swift in Sources */,
 				B397712D2BEEB39D0093A49B /* InputSource.swift in Sources */,
 				B397712B2BEE4C160093A49B /* SquirrelPanel.swift in Sources */,
 				B38E9B912BE9AE1E0036ABEF /* SquirrelApplicationDelegate.swift in Sources */,
@@ -690,7 +694,7 @@ EE0000000000000000000033 = {isa = XCSwiftPackageProductDependency; package = EE0
 				CODE_SIGN_ENTITLEMENTS = resources/Squirrel.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 0.1.36;
+				CURRENT_PROJECT_VERSION = 0.1.42;
 				DEAD_CODE_STRIPPING = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -746,7 +750,7 @@ EE0000000000000000000033 = {isa = XCSwiftPackageProductDependency; package = EE0
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = resources/Squirrel.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 0.1.36;
+				CURRENT_PROJECT_VERSION = 0.1.42;
 				DEAD_CODE_STRIPPING = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",

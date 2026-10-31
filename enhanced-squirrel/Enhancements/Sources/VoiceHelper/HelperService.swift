@@ -42,6 +42,7 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
   private var localMicrophoneTimer:Timer?
   @Published var recordingKeys = false
   @Published var testingKeys = false
+  @Published var keyCaptureStatus:String?
   @Published var downCount = 0
   @Published var upCount = 0
   @Published var needsRecovery = false
@@ -65,15 +66,27 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
   private var doubaoKeyReadID=UUID()
   private var doubaoKeyReadPending=false
   private var doubaoKeyReadTimer:Timer?
+  private var doubaoKeyReadReference:String?
+  private var doubaoKeyReadLastAttempt:TimeInterval?
+  private var doubaoKeyReadFailure:CredentialReadFailure?
+  private var doubaoKeyReadTimedOut=false
   private var draftKey:String? { draft.voice.model.isDoubao ? (newDoubaoKey.isEmpty ? cachedDoubaoKey : newDoubaoKey) : (newKey.isEmpty ? cachedKey : newKey) }
   private var productionKey:String? { saved.voice.model.isDoubao ? cachedDoubaoKey : cachedKey }
   private var activeKeyReadPending:Bool { draft.voice.model.isDoubao ? doubaoKeyReadPending : keyReadPending }
   private let credentialLoader:(String)throws->String
   private let credentialReadTimeout:TimeInterval
-  private let credentialQueue=DispatchQueue(label:"org.rime.voice.credential-read")
+  private let credentialRetryInterval:TimeInterval
+  private let credentialClock:()->TimeInterval
+  private let credentialRemover:(String)throws->Void
+  private let credentialQueue=DispatchQueue(label:"org.rime.voice.credential-read.qwen")
+  private let doubaoCredentialQueue=DispatchQueue(label:"org.rime.voice.credential-read.doubao")
   private var keyReadID=UUID()
   private var keyReadPending=false
   private var keyReadTimer:Timer?
+  private var keyReadReference:String?
+  private var keyReadLastAttempt:TimeInterval?
+  private var keyReadFailure:CredentialReadFailure?
+  private var keyReadTimedOut=false
   private var active:VoiceSession?
   private let sessionFactory:VoiceSessionFactory
   private var activeID: VoiceIdentity?
@@ -87,6 +100,7 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
   private var lastProbedFingerprint:String?
   private var connectionEdits:AnyCancellable?
   private var keys = PhysicalKeys()
+  private let keyState:(UInt16)->Bool
   private var recorded: Set<UInt16> = []
   private var held: Set<UInt16> = []
   private var monitor: Any?
@@ -104,22 +118,30 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
 
   init(baseDirectory:URL? = nil,microphonePermission:MicrophonePermissionClient = .system,
        automaticConnectionCheck:Bool = true,
+       keyState:@escaping(UInt16)->Bool = { CGEventSource.keyState(.combinedSessionState,key:CGKeyCode($0)) },
        credentialReadTimeout:TimeInterval = 5,
+       credentialRetryInterval:TimeInterval = 5,
+       credentialClock:@escaping()->TimeInterval = { ProcessInfo.processInfo.systemUptime },
+       credentialRemover:@escaping(String)throws->Void = { try CredentialStore().remove($0) },
        credentialLoader:@escaping(String)throws->String = { try CredentialStore().get($0) },
        probeFactory:@escaping ConnectionProbeFactory = { try ConnectionProbe(settings:$0,key:$1,result:$2) },
        sessionFactory:@escaping VoiceSessionFactory = {
          StreamingSession(identity:$0,settings:$1,test:$2,revision:$3,pressUptime:$4,update:$5)
        }) {
     self.microphonePermission=microphonePermission
+    self.keyState=keyState
     self.probeFactory=probeFactory
     self.sessionFactory=sessionFactory
     self.credentialLoader=credentialLoader
     self.credentialReadTimeout=credentialReadTimeout
+    self.credentialRetryInterval=max(0,credentialRetryInterval)
+    self.credentialClock=credentialClock
+    self.credentialRemover=credentialRemover
     let base = baseDirectory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/SquirrelEnhancedDev")
     store = SettingsStore(url: base.appendingPathComponent("settings.json"))
     rimeDirectory = base.appendingPathComponent("Rime")
     super.init()
-    do { saved = try store.load(); draft = saved; refreshKey(); refreshDoubaoKey() }
+    do { saved = try store.load(); draft = saved; retrySavedCredentialIfNeeded(forProduction:true) }
     catch {
       // Preserve the failed primary file. A known-valid fallback is read-only,
       // voice-off, and cannot be saved over the primary until explicit recovery.
@@ -144,17 +166,22 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
     }
   }
   private func refreshKey() {
-    keyReadTimer?.invalidate(); keyReadID=UUID(); let id=keyReadID; cachedKey=nil; keyReadPending=false
     guard let ref=saved.voice.credentialReference else { return }
-    keyReadPending=true
-    connectionStatus="正在读取已保存 Key；设置页可继续操作。"
+    // A UI deadline is not cancellation of SecItemCopyMatching. Keep one read
+    // per reference in flight; repeated gestures cannot invalidate its result.
+    if keyReadPending && keyReadReference == ref { return }
+    let now=credentialClock()
+    if keyReadReference == ref, let attempted=keyReadLastAttempt,
+       now-attempted < credentialRetryInterval { return }
+    keyReadTimer?.invalidate(); keyReadID=UUID(); let id=keyReadID
+    keyReadReference=ref; keyReadLastAttempt=now; cachedKey=nil
+    keyReadPending=true; keyReadTimedOut=false; keyReadFailure=nil
+    if !draft.voice.model.isDoubao { connectionStatus="正在读取已保存 Key；设置页可继续操作。" }
     keyReadTimer=Timer.scheduledTimer(withTimeInterval:credentialReadTimeout,repeats:false) { [weak self] _ in
       guard let self, self.keyReadID == id, self.keyReadPending else { return }
-      self.keyReadPending=false; self.keyReadTimer=nil
-      // Permission may be granted after the UI deadline. A matching late read
-      // remains valid; replacing/deleting the credential still revokes its ID.
+      self.keyReadTimer=nil; self.keyReadTimedOut=true
       guard !self.draft.voice.model.isDoubao, self.newKey.isEmpty, self.cachedKey == nil else { return }
-      self.connectionStatus="读取已保存 Key 超时。请处理系统钥匙串提示，或重新填写 API Key 并保存；原密钥与配置未删除。"
+      self.connectionStatus=self.credentialReadMessage(doubao:false)
       self.connectionError=self.connectionStatus
     }
     let loader=credentialLoader
@@ -162,52 +189,88 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
       let result=Result { try loader(ref) }
       DispatchQueue.main.async {
         guard let self, self.keyReadID == id, self.saved.voice.credentialReference == ref else { return }
-        self.keyReadTimer?.invalidate(); self.keyReadTimer=nil; self.keyReadPending=false
+        self.keyReadTimer?.invalidate(); self.keyReadTimer=nil
+        self.keyReadPending=false; self.keyReadTimedOut=false
         switch result {
         case .success(let key):
-          self.cachedKey=key
-          if !self.draft.voice.model.isDoubao && self.newKey.isEmpty { self.connectionError=nil }
-          if self.connectionEdits != nil { self.checkConnectionAutomatically() }
-        case .failure:
+          self.cachedKey=key; self.keyReadFailure=nil
+          if !self.draft.voice.model.isDoubao, self.newKey.isEmpty {
+            self.connectionError=nil; self.connectionStatus="已读取保存的 Key；下一次完整按压可使用。"
+          }
+          if self.connectionEdits != nil && !self.draft.voice.model.isDoubao { self.checkConnectionAutomatically() }
+        case .failure(let error):
+          self.keyReadFailure=CredentialReadFailure.sanitized(error)
           guard !self.draft.voice.model.isDoubao, self.newKey.isEmpty else { return }
-          self.connectionStatus="无法读取已保存 Key。请处理系统钥匙串授权后点击“重新校验”；也可重新填写 API Key 并保存。词库和其他设置已保留。"
+          self.connectionStatus=self.credentialReadMessage(doubao:false)
           self.status=self.connectionStatus; self.connectionError=self.connectionStatus
         }
       }
     }
   }
   private func refreshDoubaoKey() {
-    doubaoKeyReadTimer?.invalidate(); doubaoKeyReadID=UUID(); let id=doubaoKeyReadID; cachedDoubaoKey=nil; doubaoKeyReadPending=false
     guard let ref=saved.voice.doubao.credentialReference else { return }
-    doubaoKeyReadPending=true
-    connectionStatus="正在读取已保存 Key；设置页可继续操作。"
+    // A UI deadline is not cancellation of SecItemCopyMatching. Keep one read
+    // per reference in flight; repeated gestures cannot invalidate its result.
+    if doubaoKeyReadPending && doubaoKeyReadReference == ref { return }
+    let now=credentialClock()
+    if doubaoKeyReadReference == ref, let attempted=doubaoKeyReadLastAttempt,
+       now-attempted < credentialRetryInterval { return }
+    doubaoKeyReadTimer?.invalidate(); doubaoKeyReadID=UUID(); let id=doubaoKeyReadID
+    doubaoKeyReadReference=ref; doubaoKeyReadLastAttempt=now; cachedDoubaoKey=nil
+    doubaoKeyReadPending=true; doubaoKeyReadTimedOut=false; doubaoKeyReadFailure=nil
+    if draft.voice.model.isDoubao { connectionStatus="正在读取已保存 Key；设置页可继续操作。" }
     doubaoKeyReadTimer=Timer.scheduledTimer(withTimeInterval:credentialReadTimeout,repeats:false) { [weak self] _ in
       guard let self, self.doubaoKeyReadID == id, self.doubaoKeyReadPending else { return }
-      self.doubaoKeyReadPending=false; self.doubaoKeyReadTimer=nil
-      // Permission may be granted after the UI deadline. A matching late read
-      // remains valid; replacing/deleting the credential still revokes its ID.
+      self.doubaoKeyReadTimer=nil; self.doubaoKeyReadTimedOut=true
       guard self.draft.voice.model.isDoubao, self.newDoubaoKey.isEmpty, self.cachedDoubaoKey == nil else { return }
-      self.connectionStatus="读取已保存 Key 超时。请处理系统钥匙串提示，或重新填写 API Key 并保存；原密钥与配置未删除。"
+      self.connectionStatus=self.credentialReadMessage(doubao:true)
       self.connectionError=self.connectionStatus
     }
     let loader=credentialLoader
-    credentialQueue.async { [weak self] in
+    doubaoCredentialQueue.async { [weak self] in
       let result=Result { try loader(ref) }
       DispatchQueue.main.async {
         guard let self, self.doubaoKeyReadID == id, self.saved.voice.doubao.credentialReference == ref else { return }
-        self.doubaoKeyReadTimer?.invalidate(); self.doubaoKeyReadTimer=nil; self.doubaoKeyReadPending=false
+        self.doubaoKeyReadTimer?.invalidate(); self.doubaoKeyReadTimer=nil
+        self.doubaoKeyReadPending=false; self.doubaoKeyReadTimedOut=false
         switch result {
         case .success(let key):
-          self.cachedDoubaoKey=key
-          if self.draft.voice.model.isDoubao && self.newDoubaoKey.isEmpty { self.connectionError=nil }
-          if self.connectionEdits != nil { self.checkConnectionAutomatically() }
-        case .failure:
+          self.cachedDoubaoKey=key; self.doubaoKeyReadFailure=nil
+          if self.draft.voice.model.isDoubao, self.newDoubaoKey.isEmpty {
+            self.connectionError=nil; self.connectionStatus="已读取保存的 Key；下一次完整按压可使用。"
+          }
+          if self.connectionEdits != nil && self.draft.voice.model.isDoubao { self.checkConnectionAutomatically() }
+        case .failure(let error):
+          self.doubaoKeyReadFailure=CredentialReadFailure.sanitized(error)
           guard self.draft.voice.model.isDoubao, self.newDoubaoKey.isEmpty else { return }
-          self.connectionStatus="无法读取已保存 Key。请处理系统钥匙串授权后点击“重新校验”；也可重新填写 API Key 并保存。词库和其他设置已保留。"
+          self.connectionStatus=self.credentialReadMessage(doubao:true)
           self.status=self.connectionStatus; self.connectionError=self.connectionStatus
         }
       }
     }
+  }
+  private func credentialReadMessage(doubao:Bool) -> String {
+    let reference=doubao ? saved.voice.doubao.credentialReference : saved.voice.credentialReference
+    guard reference != nil else { return "尚未配置 API Key。请在语音输入设置中填写密钥并保存。" }
+    let pending=doubao ? doubaoKeyReadPending : keyReadPending
+    let timedOut=doubao ? doubaoKeyReadTimedOut : keyReadTimedOut
+    if pending {
+      return timedOut
+        ? "读取已保存 Key 超时，仍在等待钥匙串返回；请处理系统授权提示，无需重新填写。完成后请重新完整按压热键。"
+        : "正在读取已保存 Key；无需重新填写，请完整松开热键，稍后再次按住。"
+    }
+    let failure=doubao ? doubaoKeyReadFailure : keyReadFailure
+    let detail=failure?.errorDescription ?? "尚未完成读取。"
+    return "已保存 API Key，\(detail) 原密钥和配置未删除。请处理钥匙串授权后重新校验，或稍后完整按压热键重试。"
+  }
+
+  // Retry only credential loading. Never retain/replay a voice request or open
+  // the microphone; a later success admits only a new complete key gesture.
+  func retrySavedCredentialIfNeeded(forProduction:Bool = false) {
+    let doubao=forProduction ? saved.voice.model.isDoubao : draft.voice.model.isDoubao
+    if !forProduction && !(doubao ? newDoubaoKey : newKey).isEmpty { return }
+    guard (doubao ? cachedDoubaoKey : cachedKey) == nil else { return }
+    if doubao { refreshDoubaoKey() } else { refreshKey() }
   }
   func refreshDevices() { devices = InputDevice.available() }
   var productionMicrophoneStatus:String {
@@ -251,10 +314,9 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
     guard (settings.model.isDoubao || (settings.region != nil && !settings.workspace.isEmpty)),
           let key=candidateKey, !key.isEmpty else {
       cancelConnectionCheck(); lastProbedFingerprint=nil
-      if force, candidateKey == nil, settings.activeCredentialReference != nil, !activeKeyReadPending { if settings.model.isDoubao { refreshDoubaoKey() } else { refreshKey() } }
-      if activeKeyReadPending { connectionStatus="正在读取已保存 Key；也可直接填写新 Key 进行校验。" }
-      else if settings.activeCredentialReference != nil && candidateKey == nil {
-        connectionStatus="已保存的 Key 尚未能读取。请处理系统钥匙串提示，或重新填写 Key；填写后会自动校验。"
+      if candidateKey == nil, settings.activeCredentialReference != nil { retrySavedCredentialIfNeeded() }
+      if settings.activeCredentialReference != nil && candidateKey == nil {
+        connectionStatus=credentialReadMessage(doubao:settings.model.isDoubao)
       } else { connectionStatus=settings.model.isDoubao ? "请填写豆包密钥并选择账户已开通的模型资源；填完后会自动校验。" : "请填写地域、Workspace ID 和 API Key；填完后会自动校验。" }
       if force && !activeKeyReadPending { connectionError=connectionStatus }; return
     }
@@ -366,24 +428,24 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
         keyReadTimer?.invalidate(); keyReadTimer=nil; keyReadPending=false
         keyReadID=UUID(); cachedKey=enteredKey
       }
-      else if cachedKey == nil { refreshKey() }
+      else if cachedKey == nil && !saved.voice.model.isDoubao { refreshKey() }
       if newDoubaoReference != nil {
         doubaoKeyReadTimer?.invalidate(); doubaoKeyReadTimer=nil; doubaoKeyReadPending=false
         doubaoKeyReadID=UUID(); cachedDoubaoKey=enteredDoubaoKey
-      } else if cachedDoubaoKey == nil { refreshDoubaoKey() }
+      } else if cachedDoubaoKey == nil && saved.voice.model.isDoubao { refreshDoubaoKey() }
       status = structuralLetters ? "已保存。首次启用、页大小变化或关闭后还原原方案结构需确认部署；尚未宣称部署完成，现有组合没有提交/清空。" : "已保存；字体、排列、配色及字母键从安全组合生效。语音绑定、API、设备、预览和超时从下次完整按键周期生效。运行端确认见下方独立状态。"
       if destinationWarning { status += "\n地域/工作空间已变化，将自动校验保留的 Key 是否能连接当前服务。" }
       if let newReference, let oldReference, newReference != oldReference {
         // Active sessions hold their already-frozen in-memory key, not a new lookup.
-        try credentials.remove(oldReference)
+        try credentialRemover(oldReference)
       }
       if let newDoubaoReference, let oldDoubaoReference, newDoubaoReference != oldDoubaoReference {
-        try credentials.remove(oldDoubaoReference)
+        try credentialRemover(oldDoubaoReference)
       }
       return true
     } catch {
-      if let newReference, saved.voice.credentialReference != newReference { try? credentials.remove(newReference) }
-      if let newDoubaoReference, saved.voice.doubao.credentialReference != newDoubaoReference { try? credentials.remove(newDoubaoReference) }
+      if let newReference, saved.voice.credentialReference != newReference { try? credentialRemover(newReference) }
+      if let newDoubaoReference, saved.voice.doubao.credentialReference != newDoubaoReference { try? credentialRemover(newDoubaoReference) }
       status = persisted ? "配置已保存；凭据读取/旧项清理未完成，不能称全部应用成功：\(error.localizedDescription)" : "保存失败，未发布新配置：\(error.localizedDescription)"
       return false
     }
@@ -405,17 +467,26 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
       stopAll(cancel: true)
       next = try store.save(next); saved = next; draft = next
       if let data = try? Wire.encode(next) { callbacks?.settingsChanged(data) }
-      if let ref { try credentials.remove(ref) }
+      if let ref { try credentialRemover(ref) }
       status = "所选服务的密钥已移除；另一服务的凭据、用户词库和其他设置保留。"
     } catch { status = "删除未完整成功：\(error.localizedDescription)" }
   }
   func revert() { draft = saved; newKey = ""; newDoubaoKey = ""; status = "未保存修改已取消。" }
+  private func invalidateCredentialReadsForRestore() {
+    keyReadTimer?.invalidate(); keyReadTimer=nil; keyReadID=UUID()
+    keyReadPending=false; keyReadReference=nil; keyReadLastAttempt=nil
+    keyReadFailure=nil; keyReadTimedOut=false; cachedKey=nil
+    doubaoKeyReadTimer?.invalidate(); doubaoKeyReadTimer=nil; doubaoKeyReadID=UUID()
+    doubaoKeyReadPending=false; doubaoKeyReadReference=nil; doubaoKeyReadLastAttempt=nil
+    doubaoKeyReadFailure=nil; doubaoKeyReadTimedOut=false; cachedDoubaoKey=nil
+  }
   func restoreKnownValid() {
     do {
       stopAll(cancel:true)
       let value = try store.restoreLastValid(expectedRevision:saved.revision)
       saved = value; draft = value; newKey = ""; newDoubaoKey = ""; needsRecovery = false; recoveryAvailable = false
-      refreshKey(); refreshDoubaoKey()
+      invalidateCredentialReadsForRestore()
+      retrySavedCredentialIfNeeded(forProduction:true)
       if let data = try? Wire.encode(value) { callbacks?.settingsChanged(data) }
       status = "已恢复已知有效备份，损坏原文件另存 .recovery-*.invalid；语音保持关闭。请核对后再启用。"
     } catch { status = "恢复未成功：\(error.localizedDescription)" }
@@ -493,6 +564,7 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
       self.stopAll(cancel:true)
       self.productionAdmission.revokePending(at:ProcessInfo.processInfo.systemUptime)
       self.refreshMicrophoneAuthorization()
+      self.retrySavedCredentialIfNeeded()
       self.refreshSchemas()
       // Parent has invalidated its target before opening us. Never reactivate old apps.
       if self.windowController == nil { self.windowController = SettingsWindow(model: self) }
@@ -504,15 +576,22 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
     DispatchQueue.main.async {
       guard let value = try? Wire.decode(VoiceRequest.self, request) else { return }
       if self.activeID == value.identity { return } // Duplicate must not fail a live/finalizing owner.
-      let available=self.active == nil && self.testAudio == nil && self.saved.voice.enabled &&
-        value.revision == self.saved.revision && !self.settingsOwnFocus && self.productionKey != nil &&
+      let contextAvailable=self.active == nil && self.testAudio == nil && self.saved.voice.enabled &&
+        value.revision == self.saved.revision && !self.settingsOwnFocus &&
         !self.recordingKeys && !self.testingKeys && !self.waitingKeyRelease
+      let available=contextAvailable && self.productionKey != nil
       let decision=self.productionAdmission.admit(value.identity,pressUptime:value.pressUptime,
         receivedAt:ProcessInfo.processInfo.systemUptime,canStart:available)
       switch decision {
       case .duplicate: return
       case .start: break
       case .stoppedBeforeBegin, .unavailable, .invalidClock, .capacityLimited:
+        // Only a valid new gesture missing its key may request a retry.
+        // Cancelled, stale, busy or settings-owned gestures never cause a new
+        // Keychain interaction, and this rejected gesture is never replayed.
+        if decision == .unavailable && contextAvailable && self.productionKey == nil {
+          self.retrySavedCredentialIfNeeded(forProduction:true)
+        }
         let message:String
         switch decision {
         case .stoppedBeforeBegin: message="本次按压在启动前已结束/取消/失效；未打开麦克风。"
@@ -522,8 +601,8 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
           if self.settingsOwnFocus {
             message="当前焦点在增强设置。请在设置页测试框测试，或切回目标文本框使用热键。"
           } else if !self.saved.voice.enabled { message="语音输入尚未启用。请在语音输入设置中开启并保存。" }
-          else if self.productionKey == nil { message="尚未读取到 API Key。请在语音输入设置中填写密钥并保存。" }
           else if value.revision != self.saved.revision { message="设置正在同步，请完整松开热键，稍后再次按住。" }
+          else if self.productionKey == nil && contextAvailable { message=self.credentialReadMessage(doubao:self.saved.voice.model.isDoubao) }
           else { message="上一段语音或本地测试仍在结束，请稍后再次按住热键。" }
         }
         let update=VoiceUpdate(identity:value.identity,
@@ -729,9 +808,7 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
         localPCMSamples=0
         let uid = draft.voice.deviceUID // Freeze on the GUI thread.
         status = "正在启动本地麦克风测试；不联网、不保存音频。松开即停止。"
-        DispatchQueue.global(qos:.userInitiated).async { [weak self,audio] in
-          do {
-            try audio.start(uid:uid,pcm:{ [weak self,weak audio] data,level in
+        audio.start(uid:uid,pcm:{ [weak self,weak audio] data,level in
               DispatchQueue.main.async {
                 guard let self, let audio, self.testAudio === audio else { return }
                 self.localPCMSamples += data.count / 2
@@ -740,18 +817,15 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
             },failure:{ [weak self] message in DispatchQueue.main.async {
               guard let self, self.testHoldOwner.owns(pressID) else { return }
               self.stopAll(cancel:true); self.status=message
+            } },completion:{ [weak self,weak audio] result in DispatchQueue.main.async {
+              guard let audio else { return }
+              guard let self, self.testHoldOwner.owns(pressID), self.testAudio === audio else { return }
+              switch result {
+              case .success: self.status="本地麦克风测试；不联网、不保存音频。松开即停止。"
+              case .failure(let error):
+                _ = self.testHoldOwner.finish(pressID); self.stopLocalAudio(); self.status=error.localizedDescription
+              }
             } })
-            DispatchQueue.main.async {
-              guard let self, self.testHoldOwner.owns(pressID), self.testAudio === audio else { return }
-              self.status="本地麦克风测试；不联网、不保存音频。松开即停止。"
-            }
-          } catch {
-            DispatchQueue.main.async {
-              guard let self, self.testHoldOwner.owns(pressID), self.testAudio === audio else { return }
-              _ = self.testHoldOwner.finish(pressID); self.stopLocalAudio(); self.status=error.localizedDescription
-            }
-          }
-        }
       }
     } catch { _ = testHoldOwner.finish(pressID); stopLocalAudio(); status = error.localizedDescription }
   }
@@ -778,46 +852,64 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
   }
   func keyMode(record: Bool) {
     if waitingKeyRelease {
-      guard held.allSatisfy({!CGEventSource.keyState(.combinedSessionState,key:CGKeyCode($0))}) else {
-        status = "上次录制/测试键仍按住；请全部松开后重新开始。"; return
+      guard held.allSatisfy({!keyState($0)}) else {
+        status = "上次录制/测试键仍按住；请全部松开后重新开始。"; keyCaptureStatus=status; return
       }
       held = []; waitingKeyRelease = false; removeMonitor()
     }
-    guard !(0..<128).contains(where:{CGEventSource.keyState(.combinedSessionState,key:CGKeyCode($0))}) else {
-      status = "请先松开所有物理按键，再开始录制/测试。"; return
+    guard !(0..<128).contains(where:{keyState(UInt16($0))}) else {
+      status = "请先松开所有物理按键，再开始录制/测试。"; keyCaptureStatus=status; return
     }
     stopAll(cancel: true); removeMonitor()
     recordingKeys = record; testingKeys = !record; recorded = []; held = []; keys = PhysicalKeys()
     downCount = 0; upCount = 0
+    // End the API Key field editor before capturing, including SecureField.
+    // Local capture does not require system-wide Input Monitoring permission.
+    windowController?.window?.makeFirstResponder(nil)
+    status = record ? "请按下并松开要设置的热键；Esc 取消，不录音。" : "按下热键检查按下/松开；Esc 结束，不录音。"
+    keyCaptureStatus=status
     monitor = NSEvent.addLocalMonitorForEvents(matching:[.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
       guard let self else { return event }
-      if self.waitingKeyRelease {
-        let owns = self.held.contains(event.keyCode)
-        let down = event.type == .flagsChanged ? CGEventSource.keyState(.combinedSessionState,key:CGKeyCode(event.keyCode)) : event.type == .keyDown
-        if !down { self.held.remove(event.keyCode) }
-        if self.held.isEmpty { self.waitingKeyRelease = false; self.removeMonitor(); self.status = "上次按键已完整释放；可重新录制/测试。" }
-        return owns ? nil : event
-      }
-      if event.type == .keyDown && event.keyCode == 53 { self.finishKeyMode(cancel: true); return nil }
-      let down = event.type == .flagsChanged
-        ? CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(event.keyCode)) : event.type == .keyDown
-      if down { self.held.insert(event.keyCode); self.recorded.insert(event.keyCode) } else { self.held.remove(event.keyCode) }
-      if self.recordingKeys {
-        if !down && self.held.isEmpty {
-          let binding = TriggerBinding(codes:self.recorded)
-          do { try binding.validate(); self.draft.voice.binding = binding; self.status = "已录制 \(binding.label)，未保存；需实际按键测试检查冲突。" }
-          catch { self.status = error.localizedDescription }
-          self.finishKeyMode(cancel:false)
-        }
-      } else {
-        let action = self.keys.event(code:event.keyCode, down:down, repeated:event.type == .keyDown && event.isARepeat,
-                                     binding:self.draft.voice.binding, canStart:true)
-        if action == .start { self.downCount += 1 }
-        if action == .stop { self.upCount += 1 }
-        self.status = "物理按键测试：按下 \(self.downCount)，释放 \(self.upCount)。不采音、不联网；系统级冲突仍需真机确认。"
-      }
+      return self.handleKeyModeEvent(event)
+    }
+  }
+  // Shared by the real local monitor and native regression fixtures.
+  func handleKeyModeEvent(_ event:NSEvent) -> NSEvent? {
+    guard recordingKeys || testingKeys || waitingKeyRelease else { return event }
+    if waitingKeyRelease {
+      let owns = held.contains(event.keyCode)
+      let down = event.type == .flagsChanged ? LocalModifierKeyState.isDown(code:event.keyCode,flags:UInt64(event.modifierFlags.rawValue),held:held) ?? false : event.type == .keyDown
+      if !down { held.remove(event.keyCode) }
+      if held.isEmpty { waitingKeyRelease = false; removeMonitor(); status = "上次按键已完整释放；可重新录制/测试。" }
+      return owns ? nil : event
+    }
+    if event.type == .keyDown && event.keyCode == 53 { finishKeyMode(cancel: true); return nil }
+    if event.type == .flagsChanged && !TriggerBinding.modifierCodes.contains(event.keyCode) {
+      status="此键不支持。请使用左右 Option、Control、Shift、Command 或 F13～F19；Fn/地球和 Caps Lock 不支持。"
+      keyCaptureStatus=status
+      finishKeyMode(cancel:false)
       return nil
     }
+    let down = event.type == .flagsChanged
+      ? LocalModifierKeyState.isDown(code:event.keyCode,flags:UInt64(event.modifierFlags.rawValue),held:held) ?? false : event.type == .keyDown
+    if down { held.insert(event.keyCode); recorded.insert(event.keyCode) } else { held.remove(event.keyCode) }
+    if recordingKeys {
+      if !down && held.isEmpty && !recorded.isEmpty {
+        let binding = TriggerBinding(codes:recorded)
+        do { try binding.validate(); draft.voice.binding = binding; status = "已录制 \(binding.label)，未保存；需实际按键测试检查冲突。" }
+        catch { status = error.localizedDescription }
+        keyCaptureStatus=status
+        finishKeyMode(cancel:false)
+      }
+    } else {
+      let action = keys.event(code:event.keyCode, down:down, repeated:event.type == .keyDown && event.isARepeat,
+                                   binding:draft.voice.binding, canStart:true)
+      if action == .start { downCount += 1 }
+      if action == .stop { upCount += 1 }
+      status = "物理按键测试：按下 \(downCount)，释放 \(upCount)。不采音、不联网；系统级冲突仍需真机确认。"
+      keyCaptureStatus=status
+    }
+    return nil
   }
   func clearVoiceBinding() {
     stopAll(cancel:true)
@@ -832,7 +924,7 @@ final class HelperModel: NSObject, ObservableObject, HelperCommands {
       status = "录制/测试已退出；等待原按键全部释放，不保存未完成的绑定。"; return
     }
     waitingKeyRelease = false; removeMonitor()
-    if cancel { status = "按键录制/测试已取消，保存的绑定未改变。" }
+    if cancel { status = "按键录制/测试已取消，保存的绑定未改变。"; keyCaptureStatus=status }
   }
   private func removeMonitor() { if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil } }
   func stopAll(cancel: Bool) {

@@ -128,3 +128,52 @@ python3 tools/run_native_voice_target.py
 ## 0.1.36 助手内存回归
 
 构建 Helper 模块后运行 `python3 tools/run_helper_memory_probe.py --mode closed --label memory-closed`。另以 `hidden` 和 `miniaturized` 检查隐藏和最小化。该检查使用原生设置界面、6,000 次合成状态更新和 20 次开关，记录物理内存足迹；不使用麦克风、Keychain 或语音网络服务。见[内存修复报告](2026-10-26_fix-helper-memory-report.md)。
+
+
+## 0.1.37：注册与恢复回归
+
+`python3 tests/test_app_install_transaction.py --bash /bin/bash` 验证同包重装刷新注册、备份不再使用 `.app` 后缀、来源/备份解除注册、失败回滚及目标后续修改保护。原生签名、LaunchServices 和 TIS 使用明确的测试替身；这组测试不等于真机输入验证。
+
+构建输出与已安装应用使用相同 Bundle ID。日常只启动 `~/Library/Input Methods/SquirrelEnhancedDev.app`；不要从构建目录运行输入法主程序。安装脚本会清除本次来源副本的注册，但开发时自行打开其他副本仍可能重新改变系统关联。
+
+
+## 0.1.38：本地热键事件回归
+
+`python3 tools/run_native_voice_editor.py` 执行生产录制方法，检查不依赖回调时硬件状态的延迟事件；`--negative-hotkey-state-query` 在隔离源码副本恢复旧查询，确认相关测试确实能检出故障。Core 检查另覆盖 SDK 公开左右修饰键位。测试不采音、不写真实配置，不能替代另一台电脑的实际热键录制验收。
+
+
+## 0.1.39：输入源诊断与独立注册保护
+
+`python3 tools/run_native_input_source.py` 验证生产启用判断；`python3 tests/test_input_source_guard.py` 检查隔离保护策略。构建安装后的应用支持 `--input-source-status`。独立保护需要显式安装/启用，未捆绑到 pkg；见 [管理说明](../tools/input_source_guard/README.md) 和 [当前验收状态](2026-10-30_fix-input-availability-report.md)。
+
+## 0.1.41：启动准入与不替换现用版的构建
+
+```bash
+python3 tools/run_native_launch_admission.py
+python3 tests/test_app_install_transaction.py --bash /bin/bash
+python3 tests/test_input_source_audit.py
+```
+
+第一项只执行生产准入代码、假服务器及临时目录锁；第二项使用安装边界替身；第三项使用注入元数据与临时文件。上述检查均不启动真实输入服务。候选包正常启动仅允许正式安装路径，未知命令直接失败；维护命令也须符合参数白名单，`--build` 与现用引擎互斥。
+
+CLT 可显式选择工作区内独立构建输出，同时把来源记录和打包入口指向同一候选：
+
+```bash
+SQUIRREL_BUILD_OUTPUT_ROOT="$PWD/enhanced-squirrel/build/.candidate.noindex" \
+  ENHANCEMENT_LOCAL_SIGNING=1 bash enhanced-squirrel/scripts/build-clt.sh
+python3 tools/record_macos_build.py \
+  --app enhanced-squirrel/build/.candidate.noindex/SquirrelEnhancedDev.app
+python3 tools/build_macos_installer.py \
+  --app enhanced-squirrel/build/.candidate.noindex/SquirrelEnhancedDev.app \
+  --work-root enhanced-squirrel/build/.candidate.noindex
+```
+
+这些命令不安装候选。隐藏目录和 `.noindex` 不是 LaunchServices 隔离保证；不要在 Finder 或其他程序打开构建副本，完成包/归档校验后撤掉本次展开的候选。归档本机资源时应单独保存，不能混入公开包。
+
+本轮主程序为 0.1.41，Helper 源码与版本保持 0.1.40，避免无关版本变动改变其代码身份。完整 Xcode 工程已同步新文件，但本轮完整构建验收使用 CLT。只读诊断工具安装/启动独立于输入法，见[管理说明](../tools/input_source_audit/README.md)。当前交付与未安装边界见[追查报告](2026-10-30_initial-disappearance-investigation.md)。
+
+## 0.1.42：音频启动与停止截止时间
+
+先构建 Helper 模块，再执行 `python3 tools/run_native_audio_lifecycle.py`。测试使用生产队列与截止时间机制，注入不返回的硬件操作；两个子进程验证 Helper 的真实退出边界，不调用麦克风或联网。`python3 tools/run_native_keyboard_input.py --label voice-finalization-42` 另覆盖实际前端断连清理及迟到结果；只有夹具构建定义 `VOICE_LIFECYCLE_PROBE`，发布 App 没有测试保留状态入口。
+
+完整构建仍可使用独立输出目录；本版主程序与 Helper 均为 0.1.42，实际更新需正常退出旧进程。个人资源与公开包继续分离。不要以杀掉系统音频服务或放行并行麦克风作为超时恢复；详见[故障与验证报告](2026-10-31_fix-voice-finalization-stall.md)。

@@ -267,7 +267,7 @@ struct VoiceInputModeSettings:View {
               .lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth:.infinity,alignment:.leading)
               .padding(.leading,12).padding(.vertical,10).contentShape(Rectangle())
           }.buttonStyle(.plain)
-            .disabled(isCapturing || model.waitingKeyRelease)
+            .disabled(isCapturing)
             .help("点击后按下并松开要使用的语音热键；Esc 取消，不会开始录音。")
             .accessibilityLabel("设置语音长按键")
             .accessibilityValue(model.recordingKeys ? "正在等待新按键" : model.draft.voice.binding?.label ?? "未设置")
@@ -289,11 +289,15 @@ struct VoiceInputModeSettings:View {
       if model.recordingKeys {
         Text("请按下并松开一个按键，或最多三个按键的组合。按 Esc 或右侧 × 取消；这里只设置热键，不录音。").font(.caption).foregroundStyle(.tint)
       } else if model.waitingKeyRelease {
-        Text("请完整松开刚才的按键，再设置新键。").font(.caption).foregroundStyle(.secondary)
+        Text("请完整松开刚才的按键，再点击右侧按键重新设置。").font(.caption).foregroundStyle(.secondary)
       } else if model.testingKeys {
         Text("热键测试中：按下 \(model.downCount) 次，松开 \(model.upCount) 次。按 Esc 或右侧 × 结束；不录音、不联网。").font(.caption)
       } else {
         Text("点击右侧按键可重新设置，× 可清除；设置完成后点击下方“保存并应用”。").font(.caption).foregroundStyle(.secondary)
+      }
+      if let hint=model.keyCaptureStatus {
+        Text(hint).font(.caption).foregroundStyle(.secondary)
+          .accessibilityIdentifier("voiceHotkeyCaptureStatus")
       }
       DisclosureGroup("支持的按键与热键检查") {
         VStack(alignment:.leading,spacing:8) {

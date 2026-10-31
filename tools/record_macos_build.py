@@ -1,5 +1,6 @@
 """Record the built app's real signatures and source/dependency hashes."""
 from datetime import datetime, timezone
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -16,7 +17,10 @@ def run(argv):
 
 def main():
     project=ROOT/'enhanced-squirrel'
-    app=project/'build/CLT/SquirrelEnhancedDev.app'
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--app',type=Path,default=project/'build/CLT/SquirrelEnhancedDev.app')
+    app=parser.parse_args().app.resolve()
+    assert app.is_relative_to((project/'build').resolve()), 'App must be a workspace build candidate'
     provenance=validate(app)
     helper=app/'Contents/Resources/SquirrelVoiceHelper.app'
     commands=[run(['codesign','--verify','--deep','--strict',str(app)]),

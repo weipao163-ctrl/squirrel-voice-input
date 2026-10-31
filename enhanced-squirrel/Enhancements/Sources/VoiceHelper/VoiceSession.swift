@@ -2,6 +2,12 @@ import Foundation
 import EnhancementCore
 import EnhancementIPC
 
+protocol VoiceAudioCapture: AnyObject {
+  func start(uid: String?, pcm: @escaping (Data, Double) -> Void,
+             failure: @escaping (String) -> Void, completion: @escaping (Result<Void, Error>) -> Void)
+  @discardableResult func stop(completion: @escaping (Bool) -> Void) -> TimeInterval
+}
+
 // The Helper owns session admission and lifecycle; the live implementation
 // owns the microphone and transport. Native regression probes replace only
 // that boundary, so they can exercise real Helper commands without uploading.

@@ -69,6 +69,7 @@ final class SquirrelInputController: IMKInputController {
   private var voiceTerminal = false
   private var voiceCapturePending = false
   private var voiceLease: Timer?
+  private var voiceDeadline: VoiceOwnerDeadline?
   private var enhancementObservers: [NSObjectProtocol] = []
   // END ENHANCEMENT STATE
 
@@ -1125,6 +1126,7 @@ extension SquirrelInputController: EnhancementInput {
     case .start:
       let identity = VoiceIdentity(generation:inputGeneration)
       voiceIdentity = identity; voiceTarget = nil; voiceStopRelay.begin(identity)
+      voiceDeadline = VoiceOwnerDeadline(startedAt:ProcessInfo.processInfo.systemUptime,settings:settings.voice)
       voiceAttempted = false; voiceTerminal = false; voiceCapturePending = true
       voiceLease?.invalidate()
       // The host is synchronously waiting for handle(_:client:) to return.
@@ -1147,7 +1149,10 @@ extension SquirrelInputController: EnhancementInput {
       }
       if let identity = voiceIdentity,
          let release=voiceStopRelay.release(identity,at:event.timestamp),
-         let data = try? Wire.encode(release) { EnhancementBridge.shared.helper?.release(data) }
+         let data = try? Wire.encode(release) {
+        voiceDeadline?.stop(at:release.uptime)
+        EnhancementBridge.shared.helper?.release(data)
+      }
       return true
     case .none: break
     }
@@ -1205,6 +1210,11 @@ extension SquirrelInputController: EnhancementInput {
       }
       voiceLease=Timer(timeInterval:0.5,repeats:true) { [weak self] _ in
         guard let self,self.voiceIdentity == identity,!self.voiceTerminal else { return }
+        if self.voiceDeadline?.expired(at:ProcessInfo.processInfo.systemUptime) == true {
+          if let data=try? Wire.encode(identity) { EnhancementBridge.shared.helper?.cancel(data) }
+          self.enhancementVoiceUnavailable("上一段语音已超时取消；没有自动上屏。请完整松开后重新录音。")
+          return
+        }
         if let data=try? Wire.encode(identity) { EnhancementBridge.shared.helper?.lease(data) }
         if self.voiceTarget?.valid != true { self.enhancementInvalidated() }
       }
@@ -1293,10 +1303,27 @@ extension SquirrelInputController: EnhancementInput {
     }
     voiceTarget?.invalidate()
     if let release=voiceStopRelay.invalidate(identity,at:ProcessInfo.processInfo.systemUptime),
-       let data = try? Wire.encode(release) { EnhancementBridge.shared.helper?.release(data) }
+       let data = try? Wire.encode(release) {
+      voiceDeadline?.stop(at:release.uptime)
+      EnhancementBridge.shared.helper?.release(data)
+    }
     // Invalidation is not a synthetic physical release and never rearms a held key.
     physicalKeys.cancel()
   }
+  func enhancementVoiceUnavailable(_ message:String = "语音助手已断开，上一段已取消；请完整松键后重新触发。") {
+    guard let identity=voiceIdentity, !voiceTerminal else { return }
+    voiceCapturePending=false; voiceDeadline=nil
+    voiceTarget?.invalidate()
+    voiceReceived(VoiceUpdate(identity:identity,phase:.failed,text:"",complete:false,message:message))
+  }
+#if VOICE_LIFECYCLE_PROBE
+  // Isolated controller fixture only; never included in the shipped app.
+  func probeReserveVoice(_ identity:VoiceIdentity,released:Bool) {
+    voiceIdentity=identity; voiceTerminal=false; voiceCapturePending=false
+    voiceStopRelay.begin(identity)
+    if released { _ = voiceStopRelay.release(identity,at:ProcessInfo.processInfo.systemUptime) }
+  }
+#endif
   func enhancementConfigurationChanged(_ value:Settings) {
     if voiceIdentity == nil || voiceTerminal {
       EnhancementPreview.shared.configure(transparency:value.voice.previewTransparency,atCaret:value.voice.previewAtCaret)

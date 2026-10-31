@@ -737,6 +737,27 @@ final class KeyboardProbeClient: NSObject, IMKTextInput {
       check("repeated_activation_keeps_memory_bounded", switchAfter["physical_footprint_bytes"]! - switchBefore["physical_footprint_bytes"]! < 32 * 1024 * 1024)
       controller.deactivateServer(client.proxy)
     }
+#if VOICE_LIFECYCLE_PROBE
+    do {
+      let first=KeyboardProbeClient(), second=KeyboardProbeClient()
+      let a=newController(first), b=newController(second)
+      let old=VoiceIdentity(generation:1), pending=VoiceIdentity(generation:2)
+      a.probeReserveVoice(old,released:true); b.probeReserveVoice(pending,released:false)
+      check("disconnection_fixture_reserves_two_voice_owners",a.enhancementOwnsVoice(old) && b.enhancementOwnsVoice(pending))
+      EnhancementDeployment.shared.helperDisconnected()
+      check("helper_loss_retires_finalizing_owner",!a.enhancementOwnsVoice(old) && !a.enhancementIsBusy())
+      check("helper_loss_retires_inactive_controller_owner",!b.enhancementOwnsVoice(pending) && !b.enhancementIsBusy())
+      a.voiceReceived(VoiceUpdate(identity:old,phase:.ready,text:"late fixture",complete:true))
+      check("late_complete_result_after_disconnect_never_commits",first.committed.isEmpty)
+      let next=VoiceIdentity(generation:3)
+      a.probeReserveVoice(next,released:false)
+      a.voiceReceived(VoiceUpdate(identity:old,phase:.failed,text:"",complete:false))
+      check("old_terminal_cannot_retire_new_voice_owner",a.enhancementOwnsVoice(next))
+      a.enhancementVoiceUnavailable("fixture timeout")
+      check("frontend_timeout_retires_owner_without_insertion",!a.enhancementIsBusy() && first.committed.isEmpty)
+      a.deactivateServer(first.proxy); b.deactivateServer(second.proxy)
+    }
+#endif
     let report: [String: Any] = ["status": checks.allSatisfy { $0["passed"] as? Bool == true } ? "PASS" : "FAIL",
       "checks": checks, "metrics": metrics, "real_rime_version": api.get_version().map { String(cString: $0) } ?? "unknown",
       "scope": "actual SquirrelInputController and AppKit panel with real librime, an in-memory IMK client and isolated security-state fixture; simulated slow host; not physical keyboard or live host IPC",

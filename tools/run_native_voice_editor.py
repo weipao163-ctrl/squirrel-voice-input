@@ -8,6 +8,7 @@ ROOT=Path(__file__).resolve().parents[1]
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--negative-background-window',action='store_true',help='Reintroduce the faulty visibility guard in an isolated copy; expect the production regression to fail')
+    parser.add_argument('--negative-hotkey-state-query',action='store_true',help='Reintroduce callback-time hardware sampling in an isolated copy; expect queued modifier capture to fail')
     args=parser.parse_args()
     project=ROOT/'enhanced-squirrel'
     (project/'build').mkdir(exist_ok=True)
@@ -24,6 +25,15 @@ def main():
         assert content.count('!self.settingsOwnFocus &&')==1
         altered.write_text(content.replace('!self.settingsOwnFocus &&','self.windowController?.window?.isVisible != true &&'))
         helper=[altered if p==original else p for p in helper]
+    if args.negative_hotkey_state_query:
+        assert not args.negative_background_window
+        original=project/'Enhancements/Sources/VoiceHelper/HelperService.swift'
+        altered=work/'HelperService.swift'
+        content=original.read_text()
+        query='LocalModifierKeyState.isDown(code:event.keyCode,flags:UInt64(event.modifierFlags.rawValue),held:held) ?? false'
+        assert content.count(query)==2
+        altered.write_text(content.replace(query,'CGEventSource.keyState(.combinedSessionState,key:CGKeyCode(event.keyCode))'))
+        helper=[altered if p==original else p for p in helper]
     objects=[p for name in ['EnhancementCore','EnhancementIPC','EnhancementUI'] for p in sorted((bins/(name+'.build')).glob('*.swift.o'))]
     assert objects,'Build the Helper first with scripts/build-clt.sh'
     sources=helper+[ROOT/'tools/NativeVoiceEditorProbe.swift']
@@ -34,6 +44,7 @@ def main():
     cmd=['xcrun','swiftc','-swift-version','5','-sdk',sdk,'-I',str(bins/'Modules'),*map(str,sources),*map(str,objects),'-o',str(executable)]
     compile=subprocess.run(cmd,capture_output=True,text=True,timeout=180)
     name='macos-voice-editor-negative-background-window' if args.negative_background_window else 'macos-voice-editor'
+    if args.negative_hotkey_state_query: name='macos-voice-editor-negative-hotkey-state-query'
     (ROOT/f'evidence/{name}.compile.txt').write_text(compile.stdout+compile.stderr)
     if compile.returncode:
         print(compile.stderr[-6000:]);return compile.returncode
@@ -52,7 +63,13 @@ def main():
         report['mutation']='isolated reintroduction of isVisible-based production admission; production source unchanged'
         report['detected_expected_bug']='background_open_settings_allows_new_production_session' in failures and run.returncode==1
         report['status']='PASS' if report['detected_expected_bug'] else 'FAIL'
+    if args.negative_hotkey_state_query:
+        failures=[c['name'] for c in report['checks'] if not c['passed']]
+        report['original_suite_status']=report['status']
+        report['mutation']='isolated callback-time CGEventSource sampling instead of local modifier event state'
+        report['detected_expected_bug']='queued_option_records_even_when_hardware_already_up' in failures and run.returncode==1
+        report['status']='PASS' if report['detected_expected_bug'] else 'FAIL'
     (ROOT/f'evidence/{name}.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     print(report['status'],len(report['checks']),'native editor/overlay checks; no microphone or cloud')
-    return int(report['status']!='PASS' or (not args.negative_background_window and run.returncode!=0))
+    return int(report['status']!='PASS' or (not args.negative_background_window and not args.negative_hotkey_state_query and run.returncode!=0))
 if __name__=='__main__':raise SystemExit(main())

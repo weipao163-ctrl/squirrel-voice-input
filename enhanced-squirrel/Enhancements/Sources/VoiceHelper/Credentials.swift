@@ -2,6 +2,18 @@ import Foundation
 import Security
 import EnhancementCore
 
+// Carries only a system error code, never the account reference or secret.
+struct CredentialReadFailure: LocalizedError {
+  let status: OSStatus?
+  var errorDescription: String? {
+    if let status { return "钥匙串读取失败（OSStatus \(status)）。" }
+    return "已保存密钥的数据无法读取。"
+  }
+  static func sanitized(_ error: Error) -> Self {
+    (error as? Self) ?? Self(status: nil)
+  }
+}
+
 final class CredentialStore {
   private let service = "org.rime.SquirrelEnhanced.Development.voice"
   func put(_ key: String) throws -> String {
@@ -25,11 +37,12 @@ final class CredentialStore {
                               kSecAttrService as String:service,kSecAttrAccount as String:ref,
                               kSecReturnData as String:true, kSecMatchLimit as String:kSecMatchLimitOne]
     let status = SecItemCopyMatching(query as CFDictionary, &output)
-    guard status == errSecSuccess, let data = output as? Data,
-          let key = String(data: data, encoding: .utf8) else {
-      throw SettingsError.invalid("Keychain 无法读取（\(status)）；请在设置中重新保存 Key，不在按键路径弹框。")
+    guard status == errSecSuccess else { throw CredentialReadFailure(status: status) }
+    guard let data = output as? Data, let key = String(data: data, encoding: .utf8) else {
+      throw CredentialReadFailure(status: nil)
     }
-    try VoiceCredential.validate(key)
+    do { try VoiceCredential.validate(key) }
+    catch { throw CredentialReadFailure(status: nil) }
     return key
   }
   func remove(_ ref: String) throws {

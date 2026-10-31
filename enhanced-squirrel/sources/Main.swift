@@ -50,12 +50,24 @@ struct SquirrelApp {
 
   // swiftlint:disable:next cyclomatic_complexity
   static func main() {
-    let rimeAPI: RimeApi_stdbool = rime_get_api_stdbool().pointee
+    let action = LaunchAdmission.action(arguments: Array(CommandLine.arguments.dropFirst()))
+    guard action != .rejected else {
+      fputs("未知命令或参数无效；未启动输入法服务。请使用 --help 查看支持的命令。\n", stderr)
+      exit(EX_USAGE)
+    }
+    func hasInstalledServiceOwner() -> Bool {
+      NSRunningApplication.runningApplications(withBundleIdentifier: LaunchAdmission.bundleIdentifier)
+        .contains { application in
+          application.processIdentifier != getpid() && application.bundleURL.map {
+            LaunchAdmission.isInstalledBundle($0, home: LaunchAdmission.homeDirectory)
+          } == true
+        }
+    }
 
     let handled = autoreleasepool {
       let installer = SquirrelInstaller()
       let args = CommandLine.arguments
-      if args.count > 1 {
+      if action == .maintenance || action == .settings {
         switch args[1] {
         case "--voice-readiness":
           // Support-only read of this signed process's existing permission.
@@ -130,12 +142,20 @@ struct SquirrelApp {
           DistributedNotificationCenter.default().postNotificationName(.init("SquirrelEnhancedDevReloadNotification"), object: nil, userInfo: nil, deliverImmediately: true)
           return true
         case "--settings":
-          if NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier!)
-            .contains(where: { $0.processIdentifier != getpid() }) {
+          if hasInstalledServiceOwner() {
             DistributedNotificationCenter.default().postNotificationName(.init("SquirrelEnhancedDevOpenSettingsNotification"), object: nil, userInfo: nil, deliverImmediately: true)
             return true
           }
           return false
+        case "--input-source-status":
+          do {
+            let data = try JSONSerialization.data(withJSONObject: installer.inputSourceStatus(), options: [.prettyPrinted, .sortedKeys])
+            print(String(decoding: data, as: UTF8.self))
+          } catch {
+            fputs("输入源状态无法编码为 JSON。\n", stderr)
+            exit(EXIT_FAILURE)
+          }
+          return true
         case "--register-input-source", "--install":
           guard installer.register() == noErr else { exit(EXIT_FAILURE) }
           return true
@@ -167,16 +187,31 @@ struct SquirrelApp {
           }
           return true
         case "--build":
-          do { try prepareUserDirectory() } catch { print("Cannot prepare isolated Rime directory: \(error.localizedDescription)"); exit(EXIT_FAILURE) }
-          SquirrelApplicationDelegate.showMessage(msgText: NSLocalizedString("deploy_update", comment: ""))
-          var builderTraits = RimeTraits.rimeStructInit()
-          builderTraits.setCString(Bundle.main.sharedSupportPath!, to: \.shared_data_dir)
-          builderTraits.setCString(Self.userDir.path, to: \.user_data_dir)
-          builderTraits.setCString(Self.logDir.path, to: \.log_dir)
-          builderTraits.setCString("rime.squirrel-builder", to: \.app_name)
-          rimeAPI.setup(&builderTraits)
-          rimeAPI.deployer_initialize(nil)
-          _ = rimeAPI.deploy()
+          // Older installed versions do not own the lease yet. Refuse their
+          // canonical running process too; never build over its live user data.
+          guard !hasInstalledServiceOwner() else {
+            fputs("输入法正在运行；未执行离线部署。请使用 --reload 请求现用实例部署。\n", stderr)
+            exit(EX_TEMPFAIL)
+          }
+          do {
+            try LaunchAdmission.withEngineLease(home: LaunchAdmission.homeDirectory) {
+              let rimeAPI: RimeApi_stdbool = rime_get_api_stdbool().pointee
+              do { try prepareUserDirectory() } catch { print("Cannot prepare isolated Rime directory: \(error.localizedDescription)"); exit(EXIT_FAILURE) }
+              SquirrelApplicationDelegate.showMessage(msgText: NSLocalizedString("deploy_update", comment: ""))
+              var builderTraits = RimeTraits.rimeStructInit()
+              builderTraits.setCString(Bundle.main.sharedSupportPath!, to: \.shared_data_dir)
+              builderTraits.setCString(Self.userDir.path, to: \.user_data_dir)
+              builderTraits.setCString(Self.logDir.path, to: \.log_dir)
+              builderTraits.setCString("rime.squirrel-builder", to: \.app_name)
+              rimeAPI.setup(&builderTraits)
+              rimeAPI.deployer_initialize(nil)
+              defer { rimeAPI.finalize() }
+              _ = rimeAPI.deploy()
+            }
+          } catch {
+            fputs("无法取得输入引擎独占锁；未执行离线部署。\n", stderr)
+            exit(EX_TEMPFAIL)
+          }
           return true
         case "--sync":
           DistributedNotificationCenter.default().postNotificationName(.init("SquirrelEnhancedDevSyncNotification"), object: nil, userInfo: nil, deliverImmediately: true)
@@ -216,7 +251,9 @@ struct SquirrelApp {
           print(helpDoc)
           return true
         default:
-          break
+          // Keep this fail-closed even if the admission whitelist changes.
+          fputs("命令分发不匹配；未启动输入法服务。\n", stderr)
+          exit(EX_USAGE)
         }
       }
       return false
@@ -227,39 +264,48 @@ struct SquirrelApp {
 
     autoreleasepool {
       let main = Bundle.main
-      let connectionName = main.object(forInfoDictionaryKey: "InputMethodConnectionName") as! String
-      _ = IMKServer(name: connectionName, bundleIdentifier: main.bundleIdentifier!)
-      let app = NSApplication.shared
-      let delegate = SquirrelApplicationDelegate()
-      app.delegate = delegate
-      app.setActivationPolicy(.accessory)
+      do {
+        try LaunchAdmission.runService(bundle: main.bundleURL, home: LaunchAdmission.homeDirectory,
+          identifier: main.bundleIdentifier,
+          connectionName: main.object(forInfoDictionaryKey: "InputMethodConnectionName") as? String,
+          makeServer: { IMKServer(name: $0, bundleIdentifier: $1) }) { _ in
+          let rimeAPI: RimeApi_stdbool = rime_get_api_stdbool().pointee
+          let app = NSApplication.shared
+          let delegate = SquirrelApplicationDelegate()
+          app.delegate = delegate
+          app.setActivationPolicy(.accessory)
 
-      // OpenCC uses relative dictionary paths from SharedSupport.
-      FileManager.default.changeCurrentDirectoryPath(main.sharedSupportPath!)
+          // OpenCC uses relative dictionary paths from SharedSupport.
+          FileManager.default.changeCurrentDirectoryPath(main.sharedSupportPath!)
 
-      if NSApp.squirrelAppDelegate.problematicLaunchDetected() {
-        print("Problematic launch detected!")
-        let args = ["Problematic launch detected! Squirrel may be suffering a crash due to improper configuration. Revert previous modifications to see if the problem recurs."]
-        let task = Process()
-        task.executableURL = "/usr/bin/say".withCString { dir in
-          URL(fileURLWithFileSystemRepresentation: dir, isDirectory: false, relativeTo: nil)
+          // A recent normal launch is not evidence of a crash. Admission already
+          // excludes duplicate owners; every admitted service initializes Rime.
+          NSApp.squirrelAppDelegate.setupRime()
+          NSApp.squirrelAppDelegate.startRime(fullCheck: false)
+          NSApp.squirrelAppDelegate.loadSettings()
+          print("Squirrel reporting!")
+
+          if CommandLine.arguments.contains("--settings") {
+            DispatchQueue.main.async { EnhancementBridge.shared.openSettings() }
+          }
+
+          withExtendedLifetime(delegate) { app.run() }
+          print("Squirrel is quitting...")
+          rimeAPI.finalize()
         }
-        task.arguments = args
-        try? task.run()
-      } else {
-        NSApp.squirrelAppDelegate.setupRime()
-        NSApp.squirrelAppDelegate.startRime(fullCheck: false)
-        NSApp.squirrelAppDelegate.loadSettings()
-        print("Squirrel reporting!")
+      } catch LaunchAdmission.Failure.wrongLocation {
+        fputs("拒绝从非正式安装位置启动输入法服务；请使用已安装的鼠须管增强版。\n", stderr)
+        exit(EX_CONFIG)
+      } catch LaunchAdmission.Failure.wrongIdentity {
+        fputs("输入法标识或连接名无效；未启动服务。\n", stderr)
+        exit(EX_CONFIG)
+      } catch LaunchAdmission.Failure.lockUnavailable {
+        fputs("输入法服务已在运行或无法取得独占锁；未创建重复服务。\n", stderr)
+        exit(EX_TEMPFAIL)
+      } catch {
+        fputs("无法创建输入法服务器；未初始化输入引擎。\n", stderr)
+        exit(EX_UNAVAILABLE)
       }
-
-      if CommandLine.arguments.contains("--settings") {
-        DispatchQueue.main.async { EnhancementBridge.shared.openSettings() }
-      }
-
-      app.run()
-      print("Squirrel is quitting...")
-      rimeAPI.finalize()
     }
     return
   }
@@ -276,6 +322,7 @@ Perform actions:
   --nascii                   turn off ASCII mode
   --getascii                 get current ASCII mode status
 Install Squirrel:
+  --input-source-status                read input-source registration/enablement as JSON
   --install, --register-input-source    register input source
   --enable-input-source [source id...]  input source list optional
   --disable-input-source [source id...] input source list optional

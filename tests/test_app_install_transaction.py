@@ -48,8 +48,8 @@ class TransactionTests(unittest.TestCase):
         self.commands = self.base/'commands.txt'
         self.app(self.source, 'new')
         self.environment = os.environ.copy()
-        self.environment.update(HOME=bash_path(self.home), REGISTRATION_LOG=bash_path(self.calls),
-                                COMMAND_LOG=bash_path(self.commands))
+        self.environment.update(REGISTRATION_LOG=bash_path(self.calls), COMMAND_LOG=bash_path(self.commands),
+                                FIXTURE_SOURCE=bash_path(self.source), FIXTURE_BACKUPS=bash_path(self.backups))
 
     def tearDown(self):
         # Resolved absolute target checked before recursive native Python cleanup.
@@ -63,12 +63,31 @@ class TransactionTests(unittest.TestCase):
         executable.write_text('''#!/bin/bash
 [[ "$1" == --register-input-source ]] || exit 99
 printf 'register\\n' >> "$REGISTRATION_LOG"
+version="$(cat "$(dirname "$0")/../version.txt")"
+printf 'register:%s:%s\\n' "$version" "$0" >> "$COMMAND_LOG"
 if [[ "${CHANGE_TARGET:-0}" == 1 ]]; then
   printf 'later user edit' > "$(dirname "$0")/../version.txt"
 fi
+if [[ "$version" == new && -n "${REGISTER_NEW_STATUS:-}" ]]; then exit "$REGISTER_NEW_STATUS"; fi
 exit "${REGISTER_STATUS:-0}"
 ''', encoding='utf-8')
         executable.chmod(0o755)
+
+    def helper(self, app, marker='helper'):
+        helper = app/'Contents/Resources/SquirrelVoiceHelper.app'
+        helper.mkdir(parents=True)
+        (helper/'marker.txt').write_text(marker)
+        return helper
+
+    def assert_copy_unregistered(self, app):
+        calls = self.commands.read_text().splitlines()
+        helper_call = 'unregister:' + str(app/'Contents/Resources/SquirrelVoiceHelper.app')
+        app_call = 'unregister:' + str(app)
+        self.assertIn(helper_call, calls)
+        self.assertIn(app_call, calls)
+        self.assertLess(calls.index(helper_call), calls.index(app_call))
+        self.assertNotIn('unregister:' + str(self.target), calls)
+        return calls.index(app_call)
 
     def run_transaction(self, expected, **options):
         env = {**self.environment, **{k: str(v) for k, v in options.items()}}
@@ -83,7 +102,30 @@ ditto() {
   cp -a "$1" "$2" || return
   if [[ "${FAIL_COPY:-0}" == 1 ]]; then return 19; fi
 }
+mv() {
+  if [[ "${FAIL_RECOVERY_MOVE_KIND:-}" == staged && "$2" == "$FIXTURE_BACKUPS/staged-"* ]]; then return 29; fi
+  if [[ "${FAIL_RECOVERY_MOVE_KIND:-}" == failed && "$2" == "$FIXTURE_BACKUPS/failed-"* ]]; then return 29; fi
+  command mv "$@"
+}
 source "$1"
+run_input_method_registrar() {
+  [[ "$1" == -u ]] || return 99
+  printf 'unregister:%s\\n' "$2" >> "$COMMAND_LOG"
+  local error='' status=1
+  if [[ "$2" == "$FIXTURE_SOURCE" || "$2" == "$FIXTURE_SOURCE/"* ]]; then
+    error="${REGISTRAR_ERROR:-}"; status="${REGISTRAR_STATUS:-1}"
+  elif [[ "$2" == "$FIXTURE_BACKUPS/failed-"* || "$2" == "$FIXTURE_BACKUPS/staged-"* ]]; then
+    error="${RECOVERY_REGISTRAR_ERROR:-}"; status="${RECOVERY_REGISTRAR_STATUS:-1}"
+  elif [[ "$2" == "$FIXTURE_BACKUPS/app-"* ]]; then
+    error="${BACKUP_REGISTRAR_ERROR:-}"; status="${BACKUP_REGISTRAR_STATUS:-1}"
+  fi
+  if [[ -n "$error" ]]; then
+    printf 'failed to scan %s: %s\\n from spotlight\\n' "$2" "$error" >&2
+    if [[ "${REGISTRAR_EXTRA_ERROR:-0}" == 1 ]]; then printf 'additional unknown failure\\n' >&2; fi
+    return "$status"
+  fi
+  return 0
+}
 if [[ "${COLLIDE_STAGE:-0}" == 1 ]]; then mkdir -p "$3.new.$$"; printf KEEP > "$3.new.$$/marker"; fi
 install_development_app "$2" "$3" "$4"
 '''
@@ -101,48 +143,164 @@ install_development_app "$2" "$3" "$4"
         self.app(self.target, 'old')
         return snapshot(self.target)
 
-    def test_first_install_and_identical_repeat_do_not_reregister(self):
+    def test_identical_reinstall_repairs_registration_without_new_backup(self):
         self.run_transaction(0)
         self.assertEqual(snapshot(self.target), snapshot(self.source))
         self.assertEqual(self.calls.read_text(), 'register\n')
         self.assertEqual(list(self.backups.iterdir()), [])
         self.run_transaction(0)
-        self.assertEqual(self.calls.read_text(), 'register\n')
+        self.assertEqual(self.calls.read_text(), 'register\nregister\n')
         self.assertEqual(list(self.backups.iterdir()), [])
 
     def test_update_preserves_exact_old_bundle_once(self):
         old = self.old_app(); self.run_transaction(0)
         self.assertEqual(snapshot(self.target), snapshot(self.source))
-        backups = list(self.backups.glob('app-*.app')); self.assertEqual(len(backups), 1)
+        backups = list(self.backups.glob('app-*.app-backup')); self.assertEqual(len(backups), 1)
         self.assertEqual(snapshot(backups[0]), old)
+        self.assertEqual(list(self.backups.glob('*.app')), [])
+        calls = self.commands.read_text()
+        self.assertIn('unregister:' + str(backups[0]), calls)
+        self.assertIn('unregister:' + str(self.source), calls)
+        self.assertNotIn('unregister:' + str(self.target) + '\n', calls)
+
+    def test_unregistered_source_and_helper_do_not_rollback(self):
+        old = self.old_app()
+        helper = self.source/'Contents/Resources/SquirrelVoiceHelper.app'
+        helper.mkdir(parents=True)
+        (helper/'marker.txt').write_text('helper source')
+        self.run_transaction(0, REGISTRAR_ERROR=-10814)
+        self.assertEqual(snapshot(self.target), snapshot(self.source))
+        backups = list(self.backups.glob('app-*.app-backup'))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(snapshot(backups[0]), old)
+        self.assertEqual(list(self.backups.glob('failed-*.app-backup')), [])
+        self.assertEqual(self.calls.read_text(), 'register\n')
+        calls = self.commands.read_text()
+        self.assertIn('unregister:' + str(helper), calls)
+        self.assertIn('unregister:' + str(self.source) + '\n', calls)
+
+    def test_unknown_unregistration_error_rolls_back(self):
+        old = self.old_app()
+        self.run_transaction(1, REGISTRAR_ERROR=-10810)
+        self.assertEqual(snapshot(self.target), old)
+        failed = list(self.backups.glob('failed-*.app-backup'))
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(snapshot(failed[0]), snapshot(self.source))
+        self.assertEqual(self.calls.read_text(), 'register\n')  # restored old bundle only
+
+    def test_application_not_found_with_additional_error_is_not_ignored(self):
+        old = self.old_app()
+        self.run_transaction(1, REGISTRAR_ERROR=-10814, REGISTRAR_EXTRA_ERROR=1)
+        self.assertEqual(snapshot(self.target), old)
+        self.assertEqual(len(list(self.backups.glob('failed-*.app-backup'))), 1)
+        self.assertEqual(self.calls.read_text(), 'register\n')
 
     def test_failed_registration_restores_old_bundle_and_preserves_failed_new(self):
-        old = self.old_app(); self.run_transaction(23, REGISTER_STATUS=23)
+        old = self.old_app(); self.helper(self.source)
+        self.run_transaction(23, REGISTER_NEW_STATUS=23)
         self.assertEqual(snapshot(self.target), old)
-        failed = list(self.backups.glob('failed-*.app')); self.assertEqual(len(failed), 1)
+        failed = list(self.backups.glob('failed-*.app-backup')); self.assertEqual(len(failed), 1)
         self.assertEqual(snapshot(failed[0]), snapshot(self.source))
-        self.assertEqual(list(self.backups.glob('app-*.app')), [])
+        self.assertEqual(list(self.backups.glob('app-*.app-backup')), [])
+        self.assertEqual(self.calls.read_text(), 'register\nregister\n')
+        cleanup_index = self.assert_copy_unregistered(failed[0])
+        calls = self.commands.read_text().splitlines()
+        self.assertLess(cleanup_index, calls.index('register:old:' + str(self.target/'Contents/MacOS/SquirrelEnhancedDev')))
 
     def test_failed_first_registration_leaves_no_installed_app_and_keeps_new(self):
+        self.helper(self.source)
         self.run_transaction(23, REGISTER_STATUS=23)
         self.assertFalse(self.target.exists())
-        failed = list(self.backups.glob('failed-*.app')); self.assertEqual(len(failed), 1)
+        failed = list(self.backups.glob('failed-*.app-backup')); self.assertEqual(len(failed), 1)
         self.assertEqual(snapshot(failed[0]), snapshot(self.source))
+        self.assert_copy_unregistered(failed[0])
+
+    def test_failed_copy_cleanup_error_attempts_both_and_preserves_original_status(self):
+        old = self.old_app(); self.helper(self.source)
+        run = self.run_transaction(23, REGISTER_NEW_STATUS=23,
+                                   RECOVERY_REGISTRAR_ERROR=-10810, RECOVERY_REGISTRAR_STATUS=31)
+        self.assertEqual(snapshot(self.target), old)
+        failed = next(self.backups.glob('failed-*.app-backup'))
+        self.assertEqual(snapshot(failed), snapshot(self.source))
+        cleanup_index = self.assert_copy_unregistered(failed)
+        self.assertIn('failed to scan ' + str(failed) + ': -10810', run.stderr)
+        self.assertIn('失败新包已保留，但系统注册清理失败', run.stderr)
+        calls = self.commands.read_text().splitlines()
+        self.assertLess(cleanup_index, calls.index('register:old:' + str(self.target/'Contents/MacOS/SquirrelEnhancedDev')))
+
+    def test_never_registered_failed_copy_is_idempotent(self):
+        old = self.old_app(); self.helper(self.source)
+        run = self.run_transaction(23, REGISTER_NEW_STATUS=23, RECOVERY_REGISTRAR_ERROR=-10814)
+        self.assertEqual(snapshot(self.target), old)
+        self.assert_copy_unregistered(next(self.backups.glob('failed-*.app-backup')))
+        self.assertNotIn('系统注册清理失败', run.stderr)
+
+    def test_failed_new_move_does_not_unregister_or_overwrite_target(self):
+        old = self.old_app(); self.helper(self.source)
+        run = self.run_transaction(23, REGISTER_NEW_STATUS=23, FAIL_RECOVERY_MOVE_KIND='failed')
+        self.assertEqual(snapshot(self.target), snapshot(self.source))
+        self.assertEqual(snapshot(next(self.backups.glob('app-*.app-backup'))), old)
+        self.assertEqual(list(self.backups.glob('failed-*.app-backup')), [])
+        self.assertEqual(self.calls.read_text(), 'register\n')
+        self.assertNotIn('unregister:' + str(self.target) + '\n', self.commands.read_text())
+        self.assertNotIn('unregister:' + str(self.target/'Contents/Resources/SquirrelVoiceHelper.app'), self.commands.read_text())
+        self.assertIn('新包保留在目标位置；移动失败', run.stderr)
 
     def test_signature_and_partial_copy_failure_preserve_existing_target(self):
+        self.helper(self.source)
         old = self.old_app()
         self.run_transaction(17, FAIL_SIGNATURE=1)
         self.assertEqual(snapshot(self.target), old); self.assertFalse(self.calls.exists())
         self.run_transaction(19, FAIL_COPY=1)
         self.assertEqual(snapshot(self.target), old); self.assertFalse(self.calls.exists())
-        self.assertEqual(len(list(self.backups.glob('staged-*.app'))), 2)
+        staged = list(self.backups.glob('staged-*.app-backup'))
+        self.assertEqual(len(staged), 2)
+        for copy in staged:
+            self.assertEqual(snapshot(copy), snapshot(self.source))
+            self.assert_copy_unregistered(copy)
+
+    def test_staging_cleanup_error_preserves_existing_target_and_original_status(self):
+        old = self.old_app(); self.helper(self.source)
+        run = self.run_transaction(17, FAIL_SIGNATURE=1,
+                                   RECOVERY_REGISTRAR_ERROR=-10810, RECOVERY_REGISTRAR_STATUS=31)
+        self.assertEqual(snapshot(self.target), old)
+        self.assertFalse(self.calls.exists())
+        staged = next(self.backups.glob('staged-*.app-backup'))
+        self.assertEqual(snapshot(staged), snapshot(self.source))
+        self.assert_copy_unregistered(staged)
+        self.assertIn('failed to scan ' + str(staged) + ': -10810', run.stderr)
+        self.assertIn('未完成 staging 已保留，但系统注册清理失败', run.stderr)
+
+    def test_staging_cleanup_precedes_old_bundle_registration_after_backup_error(self):
+        self.helper(self.source); self.old_app(); self.helper(self.target)
+        old = snapshot(self.target)
+        self.run_transaction(37, BACKUP_REGISTRAR_ERROR=-10810, BACKUP_REGISTRAR_STATUS=37)
+        self.assertEqual(snapshot(self.target), old)
+        staged = next(self.backups.glob('staged-*.app-backup'))
+        cleanup_index = self.assert_copy_unregistered(staged)
+        calls = self.commands.read_text().splitlines()
+        self.assertLess(cleanup_index, calls.index('register:old:' + str(self.target/'Contents/MacOS/SquirrelEnhancedDev')))
+        self.assertEqual(self.calls.read_text(), 'register\n')
+
+    def test_staging_move_error_keeps_and_unregisters_owned_original_stage(self):
+        old = self.old_app(); self.helper(self.source)
+        run = self.run_transaction(17, FAIL_SIGNATURE=1, FAIL_RECOVERY_MOVE_KIND='staged')
+        self.assertEqual(snapshot(self.target), old)
+        self.assertFalse(self.calls.exists())
+        stages = list(self.target.parent.glob('SquirrelEnhancedDev.app.new.*'))
+        self.assertEqual(len(stages), 1)
+        self.assertEqual(snapshot(stages[0]), snapshot(self.source))
+        self.assert_copy_unregistered(stages[0])
+        self.assertEqual(list(self.backups.glob('staged-*.app-backup')), [])
+        self.assertIn('未完成 staging 保留在：' + str(stages[0]), run.stderr)
 
     def test_later_target_edit_is_not_overwritten_by_old_backup(self):
         old = self.old_app(); self.run_transaction(23, REGISTER_STATUS=23, CHANGE_TARGET=1)
         self.assertEqual((self.target/'Contents/version.txt').read_text(), 'later user edit')
-        backups = list(self.backups.glob('app-*.app')); self.assertEqual(len(backups), 1)
+        backups = list(self.backups.glob('app-*.app-backup')); self.assertEqual(len(backups), 1)
         self.assertEqual(snapshot(backups[0]), old)
-        self.assertEqual(list(self.backups.glob('failed-*.app')), [])
+        self.assertEqual(list(self.backups.glob('failed-*.app-backup')), [])
+        self.assertNotIn('unregister:' + str(self.target) + '\n', self.commands.read_text())
 
     def test_stage_collision_preserves_foreign_stage_and_existing_app(self):
         old = self.old_app(); self.run_transaction(2, COLLIDE_STAGE=1)

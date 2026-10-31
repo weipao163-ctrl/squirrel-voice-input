@@ -214,35 +214,6 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
     schema.close()
   }
 
-  // Detect repeated launches that may indicate a bad configuration loop.
-  func problematicLaunchDetected() -> Bool {
-    var detected = false
-    let logFile = FileManager.default.temporaryDirectory.appendingPathComponent("squirrel_enhanced_dev_launch.json", conformingTo: .json)
-    do {
-      let archive = try Data(contentsOf: logFile, options: [.uncached])
-      let decoder = JSONDecoder()
-      decoder.dateDecodingStrategy = .millisecondsSince1970
-      let previousLaunch = try decoder.decode(Date.self, from: archive)
-      if previousLaunch.timeIntervalSinceNow >= -2 {
-        detected = true
-      }
-    } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
-
-    } catch {
-      print("Error occurred during processing launch time archive: \(error.localizedDescription)")
-      return detected
-    }
-    do {
-      let encoder = JSONEncoder()
-      encoder.dateEncodingStrategy = .millisecondsSince1970
-      let record = try encoder.encode(Date.now)
-      try record.write(to: logFile)
-    } catch {
-      print("Error occurred during saving launch time to archive: \(error.localizedDescription)")
-    }
-    return detected
-  }
-
   func addObservers() {
     let center = NSWorkspace.shared.notificationCenter
     center.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: nil, using: workspaceWillPowerOff)

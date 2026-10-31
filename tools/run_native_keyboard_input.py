@@ -33,6 +33,8 @@ def main():
         sources = [controller if p.name == controller.name else p for p in sources]
     recovery = next(p for p in sources if p.name == 'SquirrelInputController.swift')
     recovery_defines = ['-D', 'CANDIDATE_RECOVERY_PROBE'] if 'var candidatePositionRecovery =' in recovery.read_text() else []
+    if 'func probeReserveVoice(' in recovery.read_text():
+        recovery_defines += ['-D', 'VOICE_LIFECYCLE_PROBE']
     sources.append(ROOT / 'tools/NativeKeyboardInputProbe.swift')
     objects = sorted(p for module in ['EnhancementCore', 'EnhancementIPC', 'EnhancementUI']
                      for p in (bins / (module + '.build')).glob('*.swift.o'))

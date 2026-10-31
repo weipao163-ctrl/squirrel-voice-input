@@ -4,6 +4,12 @@ import EnhancementIPC
 import EnhancementUI
 import AVFoundation
 import Combine
+private final class LockedReadCount {
+  private let lock=NSLock()
+  private var count=0
+  func next() -> Int { lock.lock(); defer { lock.unlock() }; count += 1; return count }
+  var value:Int { lock.lock(); defer { lock.unlock() }; return count }
+}
 private final class FakeConnectionProbe:ConnectionProbeTask {
   var cancelled=false
   func cancel() { cancelled=true }
@@ -62,6 +68,51 @@ private final class FakeVoiceSession:VoiceSession {
     }
     var checks:[[String:Any]]=[]
     func check(_ name:String,_ value:Bool) { checks.append(["name":name,"passed":value]) }
+    let recorder=HelperModel(baseDirectory:base.appendingPathComponent("hotkey-recorder-fixture"),automaticConnectionCheck:false,keyState:{ _ in false })
+    func modifier(_ code:UInt16,_ flags:UInt) -> NSEvent {
+      NSEvent.keyEvent(with:.flagsChanged,location:.zero,modifierFlags:NSEvent.ModifierFlags(rawValue:flags),
+        timestamp:1,windowNumber:window.windowNumber,context:nil,characters:"",charactersIgnoringModifiers:"",isARepeat:false,keyCode:code)!
+    }
+    // These local AppKit events are deliberately delivered after hardware is
+    // already up; a callback-time CGEventSource query loses the original down.
+    check("fixture_modifiers_are_not_physically_down",[UInt16(58),61,59].allSatisfy{!CGEventSource.keyState(.combinedSessionState,key:$0)})
+    recorder.keyMode(record:true)
+    _ = recorder.handleKeyModeEvent(modifier(58,0x80020))
+    check("local_event_down_is_consumed_and_keeps_recording",recorder.recordingKeys)
+    _ = recorder.handleKeyModeEvent(modifier(58,0))
+    check("queued_option_records_even_when_hardware_already_up",recorder.draft.voice.binding?.codes == [58] && !recorder.recordingKeys)
+    recorder.keyMode(record:true)
+    _ = recorder.handleKeyModeEvent(modifier(58,0x80020))
+    _ = recorder.handleKeyModeEvent(modifier(61,0x80060))
+    _ = recorder.handleKeyModeEvent(modifier(58,0x80040))
+    check("opposite_side_release_does_not_finish_chord",recorder.recordingKeys)
+    _ = recorder.handleKeyModeEvent(modifier(61,0))
+    check("both_option_sides_record_as_distinct_codes",recorder.draft.voice.binding?.codes == [58,61] && !recorder.recordingKeys)
+    recorder.draft.voice.binding=TriggerBinding(codes:[58]); recorder.keyMode(record:false)
+    _ = recorder.handleKeyModeEvent(modifier(58,0x80020))
+    _ = recorder.handleKeyModeEvent(modifier(58,0))
+    check("local_hotkey_test_counts_queued_down_and_up",recorder.downCount == 1 && recorder.upCount == 1)
+    recorder.finishKeyMode(cancel:true)
+    recorder.keyMode(record:true)
+    _ = recorder.handleKeyModeEvent(modifier(59,0x40001))
+    recorder.finishKeyMode(cancel:true)
+    check("cancel_waits_for_owned_modifier_release",recorder.waitingKeyRelease)
+    _ = recorder.handleKeyModeEvent(modifier(59,0))
+    check("cancelled_chord_release_keeps_old_binding",!recorder.waitingKeyRelease && recorder.draft.voice.binding?.codes == [58])
+    recorder.keyMode(record:true)
+    _ = recorder.handleKeyModeEvent(modifier(59,0x40001))
+    recorder.finishKeyMode(cancel:true)
+    // A release outside the settings window was not delivered; an explicit
+    // new click may re-arm only after the entry snapshot proves all keys up.
+    recorder.keyMode(record:true)
+    check("explicit_retry_recovers_missed_release_after_all_keys_up",recorder.recordingKeys && !recorder.waitingKeyRelease)
+    recorder.finishKeyMode(cancel:true)
+    recorder.keyMode(record:true)
+    _ = recorder.handleKeyModeEvent(modifier(58,0))
+    check("stray_release_cannot_save_empty_binding",recorder.recordingKeys && recorder.draft.voice.binding?.codes == [58])
+    _ = recorder.handleKeyModeEvent(modifier(63,0x800000))
+    check("unsupported_fn_gives_visible_reason_without_changing_binding",!recorder.recordingKeys && recorder.keyCaptureStatus?.contains("不支持") == true && recorder.draft.voice.binding?.codes == [58])
+    model.testEditorController.focus(editor)
     let microphoneMenu=MicrophonePopUpButton(frame:NSRect(x:10,y:212,width:560,height:24),pullsDown:false)
     window.contentView?.addSubview(microphoneMenu)
     var microphoneUID:String?="disconnected-fixture"
@@ -132,7 +183,7 @@ private final class FakeVoiceSession:VoiceSession {
     _ = try SettingsStore(url:keyReadBase.appendingPathComponent("settings.json")).save(keySettings)
     let readGate=DispatchSemaphore(value:0)
     var pendingProbeCount=0
-    let pendingKeyModel=HelperModel(baseDirectory:keyReadBase,automaticConnectionCheck:false,
+    let pendingKeyModel=HelperModel(baseDirectory:keyReadBase,automaticConnectionCheck:false,credentialRemover:{ _ in },
       credentialLoader:{ _ in
         guard readGate.wait(timeout:.now()+3) == .success else { throw SettingsError.invalid("fixture timeout") }
         return "fixture-stale-key"
@@ -157,13 +208,18 @@ private final class FakeVoiceSession:VoiceSession {
     _ = try SettingsStore(url:delayedBase.appendingPathComponent("settings.json")).save(keySettings)
     let delayedGate=DispatchSemaphore(value:0)
     var delayedProbeCount=0
+    let delayedReads=LockedReadCount()
     let delayedKeyModel=HelperModel(baseDirectory:delayedBase,credentialReadTimeout:0.03,
       credentialLoader:{ _ in
-        guard delayedGate.wait(timeout:.now()+1) == .success else { throw SettingsError.invalid("fixture timeout") }
+        _ = delayedReads.next()
+        guard delayedGate.wait(timeout:.now()+2) == .success else { throw SettingsError.invalid("fixture timeout") }
         return "fixture-late-key"
       },probeFactory:{ _,_,_ in delayedProbeCount += 1; return FakeConnectionProbe() })
     RunLoop.main.run(until:Date(timeIntervalSinceNow:0.06))
     check("key_read_deadline_reports_actionable_error",delayedKeyModel.connectionError?.contains("超时") == true && delayedProbeCount == 0)
+    for _ in 0..<5 { delayedKeyModel.testConnection() }
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.03))
+    check("timeout_rechecks_do_not_queue_duplicate_reads",delayedReads.value == 1 && delayedKeyModel.connectionStatus.contains("仍在等待"))
     delayedGate.signal(); RunLoop.main.run(until:Date(timeIntervalSinceNow:0.1))
     check("late_key_permission_can_recover_after_deadline",delayedProbeCount == 1 && delayedKeyModel.connectionError == nil)
     delayedKeyModel.stopAll(cancel:true)
@@ -179,6 +235,157 @@ private final class FakeVoiceSession:VoiceSession {
     RunLoop.main.run(until:Date(timeIntervalSinceNow:0.06))
     check("pending_key_read_does_not_interrupt_replacement_entry",replacementKeyModel.connectionError == nil)
     replacementGate.signal()
+    // Recover from a transient ACL/locked-Keychain failure without replacing
+    // the saved reference, touching the real Keychain, or replaying a gesture.
+    let retryBase=base.appendingPathComponent("retry-key-fixture")
+    var retrySettings=keySettings
+    retrySettings.voice.enabled=true; retrySettings.voice.binding=TriggerBinding(codes:[58])
+    let retrySaved=try SettingsStore(url:retryBase.appendingPathComponent("settings.json")).save(retrySettings)
+    let retryReads=LockedReadCount(), retryGate=DispatchSemaphore(value:0)
+    var retryClock:TimeInterval=100, retrySessions:[FakeVoiceSession]=[]
+    let retryModel=HelperModel(baseDirectory:retryBase,automaticConnectionCheck:false,
+      credentialClock:{ retryClock },credentialRemover:{ _ in },credentialLoader:{ _ in
+        if retryReads.next() == 1 { throw CredentialReadFailure(status:-25308) }
+        guard retryGate.wait(timeout:.now()+2) == .success else { throw CredentialReadFailure(status:nil) }
+        return "fixture-recovered-key"
+      },sessionFactory:{ identity,_,_,_,_,update in
+        let session=FakeVoiceSession(identity:identity,update:update); retrySessions.append(session); return session
+      })
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.06))
+    check("credential_failure_keeps_sanitized_osstatus",retryModel.connectionError?.contains("-25308") == true && retryModel.connectionError?.contains("已保存 API Key") == true && retryModel.connectionError?.contains(retrySaved.voice.credentialReference!) == false)
+    retryModel.testConnection(); retryModel.retrySavedCredentialIfNeeded()
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.03))
+    check("failed_key_reads_have_retry_cooldown",retryReads.value == 1)
+    retryClock += 6
+    let cancelledRetryID=VoiceIdentity(generation:96)
+    retryModel.release(try Wire.encode(VoiceRelease(identity:cancelledRetryID,uptime:ProcessInfo.processInfo.systemUptime,cause:.keyReleased)))
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.02))
+    retryModel.begin(try Wire.encode(VoiceRequest(identity:cancelledRetryID,revision:retrySaved.revision,pressUptime:ProcessInfo.processInfo.systemUptime)))
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.03))
+    check("cancelled_gesture_never_retries_keychain",retryReads.value == 1 && retrySessions.isEmpty)
+    retryModel.begin(try Wire.encode(VoiceRequest(identity:VoiceIdentity(generation:97),revision:retrySaved.revision,pressUptime:-1)))
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.03))
+    check("invalid_clock_never_retries_keychain",retryReads.value == 1 && retrySessions.isEmpty)
+    retryModel.begin(try Wire.encode(VoiceRequest(identity:VoiceIdentity(generation:98),revision:retrySaved.revision+1,pressUptime:ProcessInfo.processInfo.systemUptime)))
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.03))
+    check("stale_revision_never_retries_keychain",retryReads.value == 1 && retrySessions.isEmpty)
+    retryModel.recordingKeys=true
+    retryModel.begin(try Wire.encode(VoiceRequest(identity:VoiceIdentity(generation:99),revision:retrySaved.revision,pressUptime:ProcessInfo.processInfo.systemUptime)))
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.03))
+    check("key_capture_gesture_never_retries_keychain",retryReads.value == 1 && retrySessions.isEmpty)
+    retryModel.recordingKeys=false
+    let rejectedRetry=VoiceRequest(identity:VoiceIdentity(generation:100),revision:retrySaved.revision,pressUptime:ProcessInfo.processInfo.systemUptime)
+    retryModel.begin(try Wire.encode(rejectedRetry)); RunLoop.main.run(until:Date(timeIntervalSinceNow:0.05))
+    check("next_hotkey_retries_credential_without_recording",retryReads.value == 2 && retrySessions.isEmpty && retryModel.productionTargetStatus.contains("正在读取"))
+    retryGate.signal(); RunLoop.main.run(until:Date(timeIntervalSinceNow:0.1))
+    check("retry_completion_never_replays_rejected_press",retrySessions.isEmpty)
+    retryModel.begin(try Wire.encode(rejectedRetry)); RunLoop.main.run(until:Date(timeIntervalSinceNow:0.03))
+    check("same_rejected_identity_cannot_start_after_key_recovery",retrySessions.isEmpty)
+    retryModel.begin(try Wire.encode(VoiceRequest(identity:VoiceIdentity(generation:101),revision:retrySaved.revision,pressUptime:ProcessInfo.processInfo.systemUptime)))
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.05))
+    check("new_complete_press_uses_recovered_saved_key",retrySessions.count == 1 && retrySessions.first?.startedKey == "fixture-recovered-key")
+    retrySessions.first?.finish(.ready)
+    check("credential_retry_preserves_saved_configuration",try SettingsStore(url:retryBase.appendingPathComponent("settings.json")).load() == retrySaved)
+
+    let activationBase=base.appendingPathComponent("activation-retry-fixture")
+    _ = try SettingsStore(url:activationBase.appendingPathComponent("settings.json")).save(keySettings)
+    let activationReads=LockedReadCount()
+    let activationModel=HelperModel(baseDirectory:activationBase,automaticConnectionCheck:false,credentialRetryInterval:0,
+      credentialLoader:{ _ in
+        if activationReads.next() == 1 { throw CredentialReadFailure(status:-25293) }
+        return "fixture-activation-key"
+      },probeFactory:{ _,_,_ in FakeConnectionProbe() })
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.05))
+    NotificationCenter.default.post(name:NSApplication.didBecomeActiveNotification,object:app)
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.05))
+    check("return_from_denied_keychain_prompt_does_not_reprompt",activationReads.value == 1 && activationModel.connectionError != nil)
+    let windowsBeforeExplicitOpen=Set(NSApp.windows.map { $0.windowNumber })
+    activationModel.showSettings()
+    let explicitOpenDeadline=Date(timeIntervalSinceNow:1)
+    while (activationReads.value != 2 || activationModel.connectionError != nil) && Date() < explicitOpenDeadline {
+      RunLoop.main.run(until:Date(timeIntervalSinceNow:0.02))
+    }
+    check("explicit_settings_open_retries_failed_saved_key",activationReads.value == 2 && activationModel.connectionError == nil)
+    for created in NSApp.windows where !windowsBeforeExplicitOpen.contains(created.windowNumber) { created.orderOut(nil) }
+    window.makeKeyAndOrderFront(nil); window.makeFirstResponder(editor)
+
+    let explicitBase=base.appendingPathComponent("explicit-retry-fixture")
+    _ = try SettingsStore(url:explicitBase.appendingPathComponent("settings.json")).save(keySettings)
+    let explicitReads=LockedReadCount()
+    let explicitModel=HelperModel(baseDirectory:explicitBase,automaticConnectionCheck:false,credentialRetryInterval:0,
+      credentialLoader:{ _ in
+        if explicitReads.next() == 1 { throw SettingsError.invalid("fixture-sensitive-account-and-key") }
+        return "fixture-explicit-key"
+      },probeFactory:{ _,_,_ in FakeConnectionProbe() })
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.05))
+    check("unknown_credential_errors_never_echo_loader_details",explicitModel.connectionError?.contains("fixture-sensitive") == false)
+    explicitModel.testConnection(); RunLoop.main.run(until:Date(timeIntervalSinceNow:0.05))
+    check("explicit_recheck_retries_failed_saved_key",explicitReads.value == 2 && explicitModel.connectionError == nil)
+
+    let restoreBase=base.appendingPathComponent("restore-key-reference-fixture")
+    let restoreURL=restoreBase.appendingPathComponent("settings.json")
+    let restoreSaved=try SettingsStore(url:restoreURL).save(keySettings)
+    let restoreOriginalReference=restoreSaved.voice.credentialReference
+    var restoredProbeKeys:[String]=[]
+    let restoreModel=HelperModel(baseDirectory:restoreBase,automaticConnectionCheck:false,
+      credentialLoader:{ ref in ref == restoreOriginalReference ? "fixture-before-restore" : "fixture-after-restore" },
+      probeFactory:{ _,key,_ in restoredProbeKeys.append(key); return FakeConnectionProbe() })
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.05))
+    var restoreBackup=restoreSaved; restoreBackup.voice.credentialReference=UUID().uuidString
+    try JSONEncoder().encode(restoreBackup).write(to:restoreURL.appendingPathExtension("last-valid"))
+    try Data("invalid fixture".utf8).write(to:restoreURL)
+    restoreModel.restoreKnownValid(); RunLoop.main.run(until:Date(timeIntervalSinceNow:0.06))
+    restoreModel.testConnection()
+    check("restore_changed_reference_invalidates_previous_cached_key",restoredProbeKeys == ["fixture-after-restore"] && !restoreModel.draft.voice.enabled)
+
+    let switchBase=base.appendingPathComponent("blocked-other-provider-fixture")
+    var switchSettings=retrySettings
+    switchSettings.voice.doubao.credentialReference=UUID().uuidString
+    _ = try SettingsStore(url:switchBase.appendingPathComponent("settings.json")).save(switchSettings)
+    let blockedOther=DispatchSemaphore(value:0), qwenReads=LockedReadCount(), doubaoReads=LockedReadCount()
+    let switchReference=switchSettings.voice.credentialReference
+    var switchedSessions:[FakeVoiceSession]=[]
+    let switchModel=HelperModel(baseDirectory:switchBase,automaticConnectionCheck:false,credentialRemover:{ _ in },
+      credentialLoader:{ ref in
+        if ref == switchReference {
+          _ = qwenReads.next()
+          guard blockedOther.wait(timeout:.now()+3) == .success else { throw CredentialReadFailure(status:nil) }
+          return "fixture-blocked-qwen"
+        }
+        _ = doubaoReads.next(); return "fixture-active-doubao"
+      },sessionFactory:{ identity,_,_,_,_,update in
+        let session=FakeVoiceSession(identity:identity,update:update); switchedSessions.append(session); return session
+      })
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.05))
+    check("startup_reads_only_the_saved_active_provider",qwenReads.value == 1 && doubaoReads.value == 0)
+    switchModel.draft.voice.model = .doubao
+    check("provider_switch_without_new_key_can_save",switchModel.save())
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.08))
+    switchModel.begin(try Wire.encode(VoiceRequest(identity:VoiceIdentity(generation:102),revision:switchModel.draft.revision,pressUptime:ProcessInfo.processInfo.systemUptime)))
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.04))
+    check("previous_provider_prompt_cannot_block_active_provider",doubaoReads.value == 1 && switchedSessions.first?.startedKey == "fixture-active-doubao")
+    switchedSessions.first?.finish(.ready); blockedOther.signal()
+
+    let lateOtherBase=base.appendingPathComponent("late-inactive-provider-fixture")
+    _ = try SettingsStore(url:lateOtherBase.appendingPathComponent("settings.json")).save(switchSettings)
+    let lateOtherGate=DispatchSemaphore(value:0), currentProviderReads=LockedReadCount()
+    var lateOtherClock:TimeInterval=100
+    let lateOtherModel=HelperModel(baseDirectory:lateOtherBase,credentialClock:{ lateOtherClock },
+      credentialLoader:{ ref in
+        if ref == switchReference {
+          guard lateOtherGate.wait(timeout:.now()+3) == .success else { throw CredentialReadFailure(status:nil) }
+          return "fixture-late-inactive-provider"
+        }
+        _ = currentProviderReads.next(); throw CredentialReadFailure(status:-25293)
+      },probeFactory:{ _,_,_ in FakeConnectionProbe() })
+    lateOtherModel.draft.voice.model = .doubao; lateOtherModel.testConnection()
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.06))
+    check("current_provider_failure_is_available_for_late_callback_fixture",currentProviderReads.value == 1 && lateOtherModel.connectionError != nil)
+    lateOtherClock += 6; lateOtherGate.signal()
+    RunLoop.main.run(until:Date(timeIntervalSinceNow:0.06))
+    check("inactive_provider_late_success_never_retries_current_provider",currentProviderReads.value == 1)
+    lateOtherModel.stopAll(cancel:true)
+
     // Exercise the actual Helper admission with a real, still-visible settings
     // window. Only microphone/network work is replaced by the session fixture.
     let productionBase=base.appendingPathComponent("production-fixture")
@@ -197,7 +404,7 @@ private final class FakeVoiceSession:VoiceSession {
       })
     RunLoop.main.run(until:Date(timeIntervalSinceNow:0.1))
     productionModel.showSettings(); RunLoop.main.run(until:Date(timeIntervalSinceNow:0.15))
-    let settingsWindow=NSApp.windows.first{$0.title == "鼠须管增强输入设置（开发隔离版）"}
+    let settingsWindow=NSApp.windows.first{$0.title == "鼠须管增强输入设置（开发隔离版）" && $0.isVisible}
     check("production_fixture_settings_window_is_visible_and_key",settingsWindow?.isVisible == true && settingsWindow?.isKeyWindow == true && app.isActive)
     func beginProduction(_ id:VoiceIdentity,revision:UInt64? = nil,origin:TimeInterval? = nil) throws {
       productionModel.begin(try Wire.encode(VoiceRequest(identity:id,revision:revision ?? persisted.revision,
@@ -311,7 +518,9 @@ private final class FakeVoiceSession:VoiceSession {
     check("doubao_settings_test_uses_only_entered_doubao_secret",providerSessions.count == 2 && providerSessions.last?.startedKey == "fixture-unsaved-doubao")
     check("doubao_settings_test_uses_draft_resource_and_polish",providerSnapshots.last?.doubao.resource == .seedDuration && providerSnapshots.last?.doubao.nativePolish == false)
     providerModel.stopAll(cancel:true)
-    providerModel.draft.voice.model = .message; providerModel.newKey=""; providerModel.testHold(cloud:true,action:.start(UUID()))
+    providerModel.draft.voice.model = .message; providerModel.newKey=""
+    providerModel.retrySavedCredentialIfNeeded(); RunLoop.main.run(until:Date(timeIntervalSinceNow:0.05))
+    providerModel.testHold(cloud:true,action:.start(UUID()))
     check("qwen_test_after_doubao_uses_its_own_saved_secret",providerSessions.count == 3 && providerSessions.last?.startedKey == "fixture-qwen-only" && providerSnapshots.last?.model == .message)
     providerModel.stopAll(cancel:true)
     providerModel.revert()

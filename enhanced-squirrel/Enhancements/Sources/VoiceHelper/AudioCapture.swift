@@ -2,6 +2,8 @@ import AVFoundation
 import AudioToolbox
 import CoreAudio
 import EnhancementCore
+import Darwin
+import os.log
 
 struct InputDevice: Identifiable, Equatable {
   var id: String
@@ -51,11 +53,22 @@ final class InputDeviceInventoryObserver {
   }
 }
 
-final class AudioCapture {
-  private let engine = AVAudioEngine()
+final class AudioCapture: VoiceAudioCapture {
+  // Even engine construction belongs to the bounded control operation, never
+  // the Helper main queue or the session queue that processes stop/lease/timers.
+  private var engine: AVAudioEngine?
   private let lock = NSLock()
   private let convertQueue = DispatchQueue(label: "org.rime.audio.convert")
   private let controlQueue = DispatchQueue(label: "org.rime.audio.control")
+  private let operationDeadline = AudioOperationDeadline()
+  // Tests substitute only hardware calls; queueing, cutoff, deadlines and drain
+  // ownership remain production code. Default construction always uses CoreAudio.
+  private let startupTimeout:TimeInterval
+  private let teardownTimeout:TimeInterval
+  private let startOperation:(() throws -> Void)?
+  private let stopOperation:(() -> Void)?
+  private let fatalStall:() -> Void
+  private var startRequested = false // Protected by lock.
   private var accepting = false
   private var tapInstalled = false
   private var pendingFrames: UInt64 = 0
@@ -69,14 +82,44 @@ final class AudioCapture {
   private var drainCycle = PCMDrainLifecycle() // Protected by lock.
   private var drainCompletions: [(Bool) -> Void] = []
   private var cutoffUptime:TimeInterval? // Protected by lock; first cutoff wins.
+  init(startupTimeout:TimeInterval = 10, teardownTimeout:TimeInterval = 5,
+       startOperation:(() throws -> Void)? = nil, stopOperation:(() -> Void)? = nil,
+       fatalStall:@escaping () -> Void = {
+         os_log("Audio teardown deadline exceeded; exiting voice Helper without restarting input method", type: .fault)
+         _exit(EX_IOERR)
+       }) {
+    self.startupTimeout=startupTimeout; self.teardownTimeout=teardownTimeout
+    self.startOperation=startOperation; self.stopOperation=stopOperation; self.fatalStall=fatalStall
+  }
   private func cutoffLocked() -> TimeInterval {
     accepting=false
     if cutoffUptime == nil { cutoffUptime=ProcessInfo.processInfo.systemUptime }
     return cutoffUptime!
   }
 
-  func start(uid: String?, pcm: @escaping (Data, Double) -> Void, failure: @escaping (String) -> Void) throws {
-    try controlQueue.sync { try startOnControlQueue(uid:uid,pcm:pcm,failure:failure) }
+  func start(uid: String?, pcm: @escaping (Data, Double) -> Void, failure: @escaping (String) -> Void,
+             completion: @escaping (Result<Void, Error>) -> Void) {
+    // Serialize admission with stop so a late start cannot replace its deadline.
+    lock.lock()
+    guard !drainCycle.requested, !startRequested else {
+      lock.unlock(); completion(.failure(SettingsError.invalid("本次采音已停止；必须新建按压会话。"))); return
+    }
+    startRequested=true
+    let ticket = operationDeadline.arm(seconds: startupTimeout) { [weak self] in
+      guard let self else { return }
+      self.stop { _ in }
+      completion(.failure(SettingsError.invalid("麦克风启动超时；本次已取消，请完整松键后重试。")))
+    }
+    lock.unlock()
+    controlQueue.async {
+      let result = Result {
+        if let operation=self.startOperation { try operation() }
+        else { try self.startOnControlQueue(uid:uid,pcm:pcm,failure:failure) }
+      }
+      // A release/timeout takes ownership permanently. Late startup never
+      // resumes a WebSocket or reports successful capture for that old press.
+      if self.operationDeadline.complete(ticket) { completion(result) }
+    }
   }
   private func startOnControlQueue(uid:String?,pcm:@escaping(Data,Double)->Void,failure:@escaping(String)->Void) throws {
     lock.lock(); let alreadyStopped = drainCycle.requested; lock.unlock()
@@ -84,7 +127,10 @@ final class AudioCapture {
     guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
       throw SettingsError.invalid("麦克风未授权；请在设置中主动授权。")
     }
+    let engine = AVAudioEngine(); self.engine = engine
     let input = engine.inputNode
+    lock.lock(); let stoppedDuringOpen = drainCycle.requested; lock.unlock()
+    guard !stoppedDuringOpen else { throw SettingsError.invalid("打开设备期间按压已结束；没有启动麦克风。") }
     if let uid {
       guard let selected = InputDevice.available().first(where: { $0.id == uid }), let unit = input.audioUnit else {
         throw SettingsError.invalid("指定麦克风已不可用。")
@@ -159,7 +205,7 @@ final class AudioCapture {
         let changedDevice = Self.deviceID(input.audioUnit) != initialDevice
         let changedFormat = !input.outputFormat(forBus:0).isEqual(source)
         guard AudioRouteChangePolicy.shouldStop(accepting:live,stopRequested:false,
-          engineRunning:self.engine.isRunning,deviceChanged:changedDevice,formatChanged:changedFormat) else { return }
+          engineRunning:engine.isRunning,deviceChanged:changedDevice,formatChanged:changedFormat) else { return }
         self.lock.lock(); _ = self.cutoffLocked(); self.lock.unlock()
         failure("麦克风设备或格式确实发生变化，已停止采音。请重新选择设备后再按住热键。")
       }
@@ -188,19 +234,25 @@ final class AudioCapture {
     }
     drainCompletions.append(completion)
     let firstDrain = drain == .begin
+    // Teardown can itself hang behind startup, engine.stop, or converter drain.
+    // Do not pretend it completed and admit overlapping microphones. Only the
+    // disposable Helper exits; the input method and its keyboard engine stay up.
+    let ticket: UUID? = firstDrain ? operationDeadline.arm(seconds: teardownTimeout,expired:fatalStall) : nil
     lock.unlock()
     guard firstDrain else { return cutoff }
     // The synchronous part is ONLY the sample admission cutoff. Slow engine
     // stop/removeTap and startup serialization never run on the keyboard queue.
     controlQueue.async {
+      self.stopOperation?()
       if let observer=self.observer { NotificationCenter.default.removeObserver(observer); self.observer=nil }
-      if self.tapInstalled {
-        self.engine.inputNode.removeTap(onBus:0); self.engine.stop(); self.tapInstalled=false
+      if self.tapInstalled, let engine = self.engine {
+        engine.inputNode.removeTap(onBus:0); engine.stop(); self.tapInstalled=false
       }
       // Startup/control teardown precede the drain marker; every accepted tap
       // enqueue was completed while holding the same short admission lock.
       self.convertQueue.async {
         let result=self.convert(nil)
+        guard let ticket, self.operationDeadline.complete(ticket) else { return }
         self.lock.lock(); self.drainCycle.finish(result)
         let callbacks=self.drainCompletions; self.drainCompletions=[]; self.lock.unlock()
         for callback in callbacks { callback(result) }
@@ -208,5 +260,5 @@ final class AudioCapture {
     }
     return cutoff
   }
-  deinit { engine.stop(); if let observer { NotificationCenter.default.removeObserver(observer) } }
+  deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
 }

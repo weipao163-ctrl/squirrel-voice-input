@@ -15,5 +15,9 @@ trap 'rmdir "$lock"' EXIT
 id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$target/Contents/Info.plist")
 [[ "$id" == org.rime.inputmethod.SquirrelEnhanced.Development || "$id" == org.rime.SquirrelEnhanced.Development ]] || { echo '身份冲突，不删除。' >&2; exit 2; }
 mkdir -p "$HOME/Library/Application Support/SquirrelEnhancedDev/install-backups"
-mv "$target" "$HOME/Library/Application Support/SquirrelEnhancedDev/install-backups/uninstalled-$(date +%Y%m%d-%H%M%S)-$$.app"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$target"
+if [[ -d "$target/Contents/Resources/SquirrelVoiceHelper.app" ]]; then
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$target/Contents/Resources/SquirrelVoiceHelper.app"
+fi
+mv "$target" "$HOME/Library/Application Support/SquirrelEnhancedDev/install-backups/uninstalled-$(date +%Y%m%d-%H%M%S)-$$.app-backup"
 echo '开发包已移至可恢复备份。请手动移除系统设置中的开发输入源；正式版及后续 custom 修改未变。'

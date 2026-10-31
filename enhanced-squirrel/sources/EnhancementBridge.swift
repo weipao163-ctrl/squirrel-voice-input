@@ -62,14 +62,14 @@ final class EnhancementBridge: NSObject, AuthenticatedListenerDelegate {
     linkLock.lock(); expectedPID=nil; link.ownerEnded(); linkLock.unlock()
     let old=connection; connection=nil; connectionID=nil; old?.invalidate()
     listener?.invalidate();listener=nil
-    input?.enhancementInvalidated(); EnhancementDeployment.shared.cancelLetterTest()
+    EnhancementDeployment.shared.helperDisconnected()
   }
   private func connectionEnded(_ id:UUID) {
     guard withLink({ $0.end(id) }) else { return }
     // A stale handler cannot clear a replacement or invalidate its input session.
     guard connectionID == id else { return }
     let old=connection; connection=nil; connectionID=nil; old?.invalidate()
-    input?.enhancementInvalidated(); EnhancementDeployment.shared.cancelLetterTest()
+    EnhancementDeployment.shared.helperDisconnected()
   }
   @discardableResult func launchIfNeeded() -> Bool {
     guard process?.isRunning != true else { return true }

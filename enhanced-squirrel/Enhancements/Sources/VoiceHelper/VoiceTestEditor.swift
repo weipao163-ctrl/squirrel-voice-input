@@ -102,7 +102,7 @@ final class VoiceTestEditorController {
         return event
       }
       let down=event.type == .flagsChanged
-        ? CGEventSource.keyState(.combinedSessionState,key:CGKeyCode(event.keyCode)) : event.type == .keyDown
+        ? (LocalModifierKeyState.isDown(code:event.keyCode,flags:UInt64(event.modifierFlags.rawValue),held:self.keys.held) ?? false) : event.type == .keyDown
       let repeated=event.type == .keyDown && event.isARepeat
       let previouslyConsumed=self.consumed.contains(event.keyCode)
       if event.type == .keyDown && event.keyCode == 53 && (self.pressID != nil || model.hasEditorVoiceSession) {

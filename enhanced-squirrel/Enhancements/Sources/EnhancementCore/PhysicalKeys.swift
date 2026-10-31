@@ -4,6 +4,30 @@ public enum KeyCycleAction: Equatable { case none, start, stop }
 
 public enum VoiceKeyboardEventKind: Equatable { case keyDown, keyUp, modifierChange }
 
+// Decode the state carried by a local flagsChanged event, not the hardware
+// state at the later time its queued callback happens to run. Masks are the
+// public NX_* constants from IOKit/hidsystem/IOLLEvent.h. Some event providers
+// omit the side bits; keyCode plus our local cycle then preserves left/right.
+public enum LocalModifierKeyState {
+  public static func isDown(code:UInt16, flags:UInt64, held:Set<UInt16>) -> Bool? {
+    let family:UInt64, side:UInt64, pair:UInt64
+    switch code {
+    case 56: (family,side,pair) = (0x20000,0x2,0x6)
+    case 60: (family,side,pair) = (0x20000,0x4,0x6)
+    case 59: (family,side,pair) = (0x40000,0x1,0x2001)
+    case 62: (family,side,pair) = (0x40000,0x2000,0x2001)
+    case 58: (family,side,pair) = (0x80000,0x20,0x60)
+    case 61: (family,side,pair) = (0x80000,0x40,0x60)
+    case 55: (family,side,pair) = (0x100000,0x8,0x18)
+    case 54: (family,side,pair) = (0x100000,0x10,0x18)
+    default: return nil
+    }
+    guard flags & family != 0 else { return false }
+    if flags & pair != 0 { return flags & side != 0 }
+    return !held.contains(code)
+  }
+}
+
 // Called by the native coordinator after the owned-cycle routing. This does not
 // synthesize a release or consume an event: the original input path still runs.
 public enum VoiceKeyInterruptionPolicy {

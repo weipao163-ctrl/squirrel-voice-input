@@ -13,6 +13,12 @@ final class EnhancementDeployment {
   private var deploymentInFlight = false
   private var letterProbeProcess: Process?
   private var letterProbeCancellation: String?
+  func helperDisconnected() {
+    // A disconnected Helper can never deliver the missing terminal event.
+    // Retire every controller's owner, including inactive windows.
+    for controller in controllers.allObjects { controller.enhancementVoiceUnavailable() }
+    cancelLetterTest()
+  }
   func deliverVoice(_ value:VoiceUpdate) {
     let owners = controllers.allObjects.filter { $0.enhancementOwnsVoice(value.identity) }
     for owner in owners { owner.voiceReceived(value) }

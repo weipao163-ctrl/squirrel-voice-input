@@ -27,12 +27,23 @@ if [[ "${ENHANCEMENT_LOCAL_SIGNING:-0}" == 1 ]]; then
 fi
 export local_certificate_sha1
 mkdir -p build/evidence
+output_root="${SQUIRREL_BUILD_OUTPUT_ROOT:-$root/build/CLT}"
+# A non-live build can use a private staging area without replacing the normal
+# workspace candidate. Never accept an installation or user-data destination.
+python3 - "$root" "$output_root" <<'PY'
+from pathlib import Path
+import sys
+root, output = map(Path, sys.argv[1:])
+assert output.is_absolute() and output.resolve().is_relative_to((root/'build').resolve()), 'Output must remain inside workspace build/'
+assert not output.is_symlink(), 'Output cannot be a symlink'
+PY
+mkdir -p "$output_root"
 python3 "$root/../tools/macos_build_provenance.py" start "$sdk"
 swift build --package-path Enhancements --build-system native --sdk "$sdk" \
   --scratch-path build/swift-clt -j 4 --product SquirrelVoiceHelper \
   2>&1 | tee build/evidence/clt-helper.txt
 bins="$(swift build --package-path Enhancements --build-system native --sdk "$sdk" --scratch-path build/swift-clt --show-bin-path)"
-stage="$(mktemp -d "$root/build/clt-stage.XXXXXX")"
+stage="$(mktemp -d "$output_root/.clt-stage.XXXXXX")"
 app="$stage/SquirrelEnhancedDev.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
 arch="$(uname -m)"
@@ -77,8 +88,8 @@ from pathlib import Path
 app,root=map(Path,sys.argv[1:])
 info=plistlib.loads((root/'resources/Info.plist').read_bytes())
 info.update(CFBundleIdentifier='org.rime.inputmethod.SquirrelEnhanced.Development',
-            CFBundleExecutable='SquirrelEnhancedDev',CFBundleVersion='0.1.36',
-            CFBundleShortVersionString='0.1.36',CFBundleSupportedPlatforms=['MacOSX'],
+            CFBundleExecutable='SquirrelEnhancedDev',CFBundleVersion='0.1.42',
+            CFBundleShortVersionString='0.1.42',CFBundleSupportedPlatforms=['MacOSX'],
             LSMinimumSystemVersion='13.0',SquirrelEnhancementTeamID='',SquirrelEnhancementCertificateSHA1=os.environ['local_certificate_sha1'])
 # Team ID is never fabricated; local trust is an exact certificate pin.
 icon=root/'build/runtime-icon.icns'
@@ -91,7 +102,7 @@ else:
 helper={'CFBundleIdentifier':'org.rime.SquirrelEnhanced.Development.VoiceHelper',
  'CFBundleExecutable':'SquirrelVoiceHelper','CFBundleName':'鼠须管增强设置开发版',
  'CFBundleDisplayName':'鼠须管增强设置开发版','LSUIElement':True,
- 'CFBundlePackageType':'APPL','CFBundleVersion':'0.1.36','CFBundleShortVersionString':'0.1.36',
+ 'CFBundlePackageType':'APPL','CFBundleVersion':'0.1.42','CFBundleShortVersionString':'0.1.42',
  'LSMinimumSystemVersion':'13.0','SquirrelEnhancementTeamID':'',
  'SquirrelEnhancementCertificateSHA1':os.environ['local_certificate_sha1'],
  'NSMicrophoneUsageDescription':'仅在明确按住说话或主动测试时采集；云识别会向您选择并配置的语音服务发送音频。'}
@@ -139,14 +150,13 @@ else
   codesign --force --sign - --options runtime --entitlements resources/Squirrel.entitlements "$app"
 fi
 codesign --verify --deep --strict "$app" 2>&1 | tee build/evidence/clt-signature.txt
-mkdir -p build/CLT
-if [[ -e build/CLT/SquirrelEnhancedDev.app ]]; then
-  mv build/CLT/SquirrelEnhancedDev.app "build/CLT/SquirrelEnhancedDev.previous.$(date +%Y%m%d%H%M%S).app"
+if [[ -e "$output_root/SquirrelEnhancedDev.app" ]]; then
+  mv "$output_root/SquirrelEnhancedDev.app" "$output_root/SquirrelEnhancedDev.previous.$(date +%Y%m%d%H%M%S).app-backup"
 fi
-mv "$app" build/CLT/
+mv "$app" "$output_root/"
 rmdir "$stage"
-python3 "$root/../tools/macos_build_provenance.py" complete "$root/build/CLT/SquirrelEnhancedDev.app"
-echo "构建候选：$root/build/CLT/SquirrelEnhancedDev.app"
+python3 "$root/../tools/macos_build_provenance.py" complete "$output_root/SquirrelEnhancedDev.app"
+echo "构建候选：$output_root/SquirrelEnhancedDev.app"
 if [[ -n "$local_certificate_sha1" ]]; then
   echo '本机 arm64、本地证书签名、双向证书绑定 IPC；未经 Apple 公证。没有安装或切换输入源。'
 else

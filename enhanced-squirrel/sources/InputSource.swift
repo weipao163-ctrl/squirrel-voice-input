@@ -7,6 +7,7 @@
 
 import Foundation
 import InputMethodKit
+import Carbon
 
 final class SquirrelInstaller {
   enum InputMode: String, CaseIterable {
@@ -14,9 +15,10 @@ final class SquirrelInstaller {
     case hans = "org.rime.inputmethod.SquirrelEnhanced.Development.Hans"
     case hant = "org.rime.inputmethod.SquirrelEnhanced.Development.Hant"
   }
-  private lazy var inputSources: [String: TISInputSource] = {
+  // TIS objects are snapshots. Registration and enablement can change the list
+  // during this install command; never reuse a pre-registration snapshot.
+  private var inputSources: [String: TISInputSource] {
     var inputSources = [String: TISInputSource]()
-    var matchingSources = [InputMode: TISInputSource]()
     let sourceList = TISCreateInputSourceList(nil, true).takeRetainedValue() as! [TISInputSource]
     for inputSource in sourceList {
       let sourceIDRef = TISGetInputSourceProperty(inputSource, kTISPropertyInputSourceID)
@@ -24,30 +26,116 @@ final class SquirrelInstaller {
       inputSources[sourceID] = inputSource
     }
     return inputSources
-  }()
+  }
 
-  func enabledModes() -> [InputMode] {
-    // A mode can have a true default state while its parent method is disabled.
-    guard let identifier = Bundle.main.bundleIdentifier,
-          let method = inputSources[identifier],
-          getBool(for: method, key: kTISPropertyInputSourceIsEnabled) == true else { return [] }
-    var enabledModes = Set<InputMode>()
-    for (mode, inputSource) in getInputSource(modes: InputMode.allCases) {
-      if let enabled = getBool(for: inputSource, key: kTISPropertyInputSourceIsEnabled), enabled {
-        enabledModes.insert(mode)
-      }
-      if enabledModes.count == InputMode.allCases.count {
-        break
+  // Installation commands have injectable system boundaries so a cached TIS
+  // default cannot be mistaken for a successful, persisted user choice.
+  struct SourceAccess {
+    var enabledIDs: () -> Set<String>
+    var installedIDs: () -> Set<String>
+    var savedSources: () -> [[String: String]]
+    var enable: (String) -> OSStatus
+  }
+
+  private let identifier: String
+  private let access: SourceAccess
+
+  init(identifier: String = Bundle.main.bundleIdentifier ?? "", access: SourceAccess? = nil) {
+    self.identifier = identifier
+    self.access = access ?? Self.systemAccess(identifier: identifier)
+  }
+
+  private static func sourceID(_ source: TISInputSource) -> String? {
+    guard let pointer = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else { return nil }
+    return Unmanaged<CFString>.fromOpaque(pointer).takeUnretainedValue() as String
+  }
+
+  private static func sources(identifier: String, allInstalled: Bool) -> [TISInputSource] {
+    let filter = [kTISPropertyBundleID as String: identifier] as CFDictionary
+    return TISCreateInputSourceList(filter, allInstalled).takeRetainedValue() as! [TISInputSource]
+  }
+
+  struct SavedSourceState {
+    let domain: String
+    let records: [[String: String]]
+    let legacyRecords: [[String: String]]
+    let modernRecords: [[String: String]]
+  }
+
+  static func savedSourceState(modern: Any?, legacy: Any?) -> SavedSourceState {
+    func sanitized(_ value: Any?) -> [[String: String]] {
+      let keys = ["Bundle ID", "Input Mode", "InputSourceKind", "KeyboardLayout Name", "KeyboardLayout ID"]
+      return (value as? [[String: Any]] ?? []).map { record in
+        var clean: [String: String] = [:]
+        for key in keys {
+          if let text = record[key] as? String { clean[key] = text }
+          else if let number = record[key] as? NSNumber { clean[key] = number.stringValue }
+        }
+        return clean
       }
     }
-    return Array(enabledModes)
+    let older = sanitized(legacy), newer = sanitized(modern)
+    // macOS 27 stores third-party choices separately. An explicitly empty new
+    // domain is authoritative; do not resurrect stale HIToolbox entries.
+    return SavedSourceState(domain: modern == nil ? "com.apple.HIToolbox" : "com.apple.inputsources",
+      records: modern == nil ? older : newer, legacyRecords: older, modernRecords: newer)
+  }
+
+  static func readSavedSourceState() -> SavedSourceState {
+    // Read only, using a whitelist of input-source metadata. No preferences
+    // writes/synchronization, arbitrary settings, credentials or user text.
+    let modern = CFPreferencesCopyValue("AppleEnabledThirdPartyInputSources" as CFString,
+      "com.apple.inputsources" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+    let legacy = CFPreferencesCopyValue("AppleEnabledInputSources" as CFString,
+      "com.apple.HIToolbox" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+    return savedSourceState(modern: modern, legacy: legacy)
+  }
+
+  static func savedInputSources() -> [[String: String]] { readSavedSourceState().records }
+
+  private static func systemAccess(identifier: String) -> SourceAccess {
+    SourceAccess(
+      enabledIDs: { Set(sources(identifier: identifier, allInstalled: false).compactMap(sourceID)) },
+      installedIDs: { Set(sources(identifier: identifier, allInstalled: true).compactMap(sourceID)) },
+      savedSources: savedInputSources,
+      enable: { id in
+        let filter = [kTISPropertyInputSourceID as String: id] as CFDictionary
+        let matches = TISCreateInputSourceList(filter, true).takeRetainedValue() as! [TISInputSource]
+        guard let source = matches.first(where: { sourceID($0) == id }) else { return OSStatus(paramErr) }
+        return TISEnableInputSource(source)
+      })
+  }
+
+  private func savedModes(in records: [[String: String]]) -> [InputMode] {
+    let ids = Set(records.compactMap { record -> String? in
+      guard record["Bundle ID"] == identifier, record["InputSourceKind"] == "Input Mode" else { return nil }
+      return record["Input Mode"]
+    })
+    return InputMode.allCases.filter { ids.contains($0.rawValue) }
+  }
+
+  private func hasSavedParent(in records: [[String: String]]) -> Bool {
+    records.contains { $0["Bundle ID"] == identifier && $0["InputSourceKind"] == "Keyboard Input Method" }
+  }
+
+  func enabledModes() -> [InputMode] {
+    // allInstalled=true can expose default-enabled modes absent from the saved
+    // menu. Require both the saved parent/modes and the enabled-only TIS list.
+    let saved = access.savedSources()
+    guard hasSavedParent(in: saved) else { return [] }
+    let enabled = access.enabledIDs()
+    guard enabled.contains(identifier) else { return [] }
+    return savedModes(in: saved).filter { enabled.contains($0.rawValue) }
   }
 
   @discardableResult func register() -> OSStatus {
-    let enabledInputModes = enabledModes()
-    if !enabledInputModes.isEmpty {
-      print("User already registered Squirrel method(s): \(enabledInputModes.map { $0.rawValue })")
-      return noErr
+    // Enabled modes do not prove that LaunchServices points at this app. An
+    // update moves bundles, and build/backup copies can retain the same ID.
+    // Refresh both registries even when the user's modes are already enabled.
+    let launchStatus = LSRegisterURL(SquirrelApp.appDir as CFURL, true)
+    guard launchStatus == noErr else {
+      fputs("Application registration failed (OSStatus \(launchStatus)).\n", stderr)
+      return launchStatus
     }
     let status = TISRegisterInputSource(SquirrelApp.appDir as CFURL)
     if status == noErr {
@@ -70,27 +158,58 @@ final class SquirrelInstaller {
   }
 
   @discardableResult func enable(modes: [InputMode] = []) -> OSStatus {
-    let enabledInputModes = enabledModes()
-    if !enabledInputModes.isEmpty && modes.isEmpty {
-      print("User already enabled Squirrel method(s): \(enabledInputModes.map { $0.rawValue })")
-      // Preserve manually enabled input modes.
-      return noErr
-    }
-    let modesToEnable = modes.isEmpty ? [.primary] : modes
-    guard getInputSource(modes: modesToEnable).count == modesToEnable.count,
-          let identifier = Bundle.main.bundleIdentifier, let method = inputSources[identifier] else { return OSStatus(paramErr) }
-    if getBool(for: method, key: kTISPropertyInputSourceIsEnabled) != true {
-      let status = TISEnableInputSource(method)
+    let saved = savedModes(in: access.savedSources())
+    // A Hant-only user choice remains Hant-only even if TIS has lost its state.
+    let modesToEnable = modes.isEmpty ? (saved.isEmpty ? [.primary] : saved) : modes
+    let installed = access.installedIDs()
+    guard installed.contains(identifier),
+          modesToEnable.allSatisfy({ installed.contains($0.rawValue) }) else { return OSStatus(paramErr) }
+    // This is an explicit enable command. Always call the supported API: an
+    // all-installed snapshot reporting enabled is not an enablement receipt.
+    let parentStatus = access.enable(identifier)
+    guard parentStatus == noErr else { return parentStatus }
+    for mode in InputMode.allCases where modesToEnable.contains(mode) {
+      let status = access.enable(mode.rawValue)
       guard status == noErr else { return status }
     }
-    for (mode, inputSource) in getInputSource(modes: modesToEnable) {
-      if let enabled = getBool(for: inputSource, key: kTISPropertyInputSourceIsEnabled), !enabled {
-        let error = TISEnableInputSource(inputSource)
-        print("Enable \(error == noErr ? "succeeds" : "fails") for input source: \(mode.rawValue)")
-        guard error == noErr else { return error }
-      }
+    let verified = Set(enabledModes())
+    guard Set(modesToEnable).isSubset(of: verified) else {
+      fputs("输入源 API 已返回成功，但系统保存记录与可用输入源列表未能同时核验通过；未确认启用成功。请在系统设置 → 键盘 → 文本输入 → 编辑中添加鼠须管增强版并点击完成，再运行 --input-source-status 核验。未直接修改系统偏好文件，也未禁用或切换任何输入源。\n", stderr)
+      return OSStatus(-1)
     }
+    print("已核验系统保存的输入模式：\(modesToEnable.map { $0.rawValue }.joined(separator: ", "))")
     return noErr
+  }
+
+  func inputSourceStatus() -> [String: Any] {
+    // The enabled-only query MUST run first in a fresh diagnostic process.
+    // Loading all installed sources can reveal defaults and change later TIS
+    // observations; preserve both snapshots instead of conflating them.
+    let enabled = access.enabledIDs().sorted()
+    let saved = access.savedSources()
+    let storage = Self.readSavedSourceState()
+    let current = Self.currentInputSourceID() ?? "unknown"
+    let preferred = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier)?.path ?? "missing"
+    let installed = access.installedIDs().sorted()
+    return [
+      "bundle_id": identifier,
+      "enabled_only_ids_before_all_installed": enabled,
+      "all_installed_ids": installed,
+      "saved_enabled_input_sources": saved,
+      "saved_source_domain": storage.domain,
+      "hitoolbox_enabled_input_sources": storage.legacyRecords,
+      "inputsources_enabled_third_party_sources": storage.modernRecords,
+      "saved_parent_present": hasSavedParent(in: saved),
+      "saved_mode_ids": savedModes(in: saved).map { $0.rawValue },
+      "current_source": current,
+      "preferred_app_path": preferred,
+      "self_app_path": Bundle.main.bundleURL.path,
+      "self_version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+      "secure_input": IsSecureEventInputEnabled(),
+      "query_order": ["enabled-only", "saved-preferences", "current-source", "preferred-app", "all-installed"],
+      "registration_attempted": false, "enable_attempted": false,
+      "preferences_written": false, "microphone_used": false, "cloud_calls": 0
+    ]
   }
 
   @discardableResult func select(mode: InputMode? = nil) -> OSStatus {

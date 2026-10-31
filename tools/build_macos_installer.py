@@ -1,5 +1,6 @@
 """Create a real Installer product containing the compiled app and user transaction."""
 from datetime import datetime,timezone
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -23,7 +24,13 @@ def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
 
 def main():
     project=ROOT/'enhanced-squirrel'
-    app=project/'build/CLT/SquirrelEnhancedDev.app'
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--app',type=Path,default=project/'build/CLT/SquirrelEnhancedDev.app')
+    parser.add_argument('--work-root',type=Path,default=project/'build')
+    args=parser.parse_args()
+    app=args.app.resolve();work_root=args.work_root.resolve()
+    assert app.is_relative_to((project/'build').resolve()) and work_root.is_relative_to((project/'build').resolve()), 'Build artifacts must remain inside workspace build/'
+    work_root.mkdir(parents=True,exist_ok=True)
     provenance=validate(app)
     info=plistlib.loads((app/'Contents/Info.plist').read_bytes())
     pin=info.get('SquirrelEnhancementCertificateSHA1','')
@@ -44,7 +51,7 @@ def main():
         any(part.endswith('.userdb') for part in p.relative_to(app).parts) for p in app.rglob('*'))
     checks.append(command(['codesign','--verify','--strict','-R',f'=identifier "org.rime.inputmethod.SquirrelEnhanced.Development" and certificate leaf = H"{pin}"',app]))
     checks.append(command(['codesign','--verify','--strict','-R',f'=identifier "org.rime.SquirrelEnhanced.Development.VoiceHelper" and certificate leaf = H"{pin}"',helper]))
-    stage=Path(tempfile.mkdtemp(prefix='installer-',dir=project/'build'))
+    stage=Path(tempfile.mkdtemp(prefix='installer-',dir=work_root))
     scripts=stage/'scripts';scripts.mkdir()
     checks.append(command(['/usr/bin/ditto',app,scripts/app.name]))
     for name,target in [('pkg-postinstall.sh','postinstall'),('pkg-user-install.sh','pkg-user-install.sh'),('app-install-transaction.sh','app-install-transaction.sh'),('app-update-preparation.sh','app-update-preparation.sh')]:
@@ -56,7 +63,7 @@ def main():
     home_rejection=command(['/bin/bash',scripts/'pkg-user-install.sh',scripts/app.name,'/not-the-user-home'],check=False)
     assert home_rejection['exit_code']==2
     identifier='org.rime.SquirrelEnhanced.Development.Installer'
-    version='0.1.20261026.36'
+    version='0.1.20261031.42'
     component=stage/'SquirrelVoiceInput.component.pkg'
     # Script-only package avoids Installer overwriting a live input method. The
     # signed app is inside Scripts and installed atomically by the shared tested

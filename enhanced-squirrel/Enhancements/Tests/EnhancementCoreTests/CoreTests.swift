@@ -2,6 +2,26 @@ import XCTest
 @testable import EnhancementCore
 
 final class CoreTests:XCTestCase {
+  func testLocalModifierEventCarriesSideStateWithoutHardwareQuery() {
+    let pairs:[(UInt16,UInt16,UInt64,UInt64,UInt64)] = [
+      (56,60,0x20000,0x2,0x4),(59,62,0x40000,0x1,0x2000),
+      (58,61,0x80000,0x20,0x40),(55,54,0x100000,0x8,0x10)]
+    for (left,right,family,l,r) in pairs {
+      XCTAssertEqual(LocalModifierKeyState.isDown(code:left,flags:family|l,held:[]),true)
+      XCTAssertEqual(LocalModifierKeyState.isDown(code:right,flags:family|l|r,held:[left]),true)
+      XCTAssertEqual(LocalModifierKeyState.isDown(code:left,flags:family|r,held:[left,right]),false)
+      XCTAssertEqual(LocalModifierKeyState.isDown(code:right,flags:0,held:[right]),false)
+      // A duplicate event carrying the same device-side bit is still a down.
+      XCTAssertEqual(LocalModifierKeyState.isDown(code:left,flags:family|l,held:[left]),true)
+    }
+    XCTAssertNil(LocalModifierKeyState.isDown(code:63,flags:0x800000,held:[]))
+  }
+  func testLocalModifierSideFallbackKeepsBothSidesDistinct() {
+    XCTAssertEqual(LocalModifierKeyState.isDown(code:58,flags:0x80000,held:[]),true)
+    XCTAssertEqual(LocalModifierKeyState.isDown(code:61,flags:0x80000,held:[58]),true)
+    XCTAssertEqual(LocalModifierKeyState.isDown(code:58,flags:0x80000,held:[58,61]),false)
+    XCTAssertEqual(LocalModifierKeyState.isDown(code:61,flags:0,held:[61]),false)
+  }
   private var doubaoVoice:VoiceSettings {
     var value=VoiceSettings(); value.model = .doubao; return value
   }
