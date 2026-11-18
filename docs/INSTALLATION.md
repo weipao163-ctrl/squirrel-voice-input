@@ -1,6 +1,10 @@
 # 安装鼠须管语音增强输入法
 
-0.1.42 修复语音长时间停留在“正在收尾上一段”的问题，并包含启动、注册、安装回滚及原密钥读取加固。完整安装包为 `SquirrelVoiceInput-0.1.20261031.42-arm64.pkg`，本机已确认连续两段语音正常识别、输入，详见[修复报告](2026-10-31_fix-voice-finalization-stall.md)。
+0.1.46提供0.1～3.0秒可调的鼠标左键长按语音，默认关闭、微信自动排除，键盘热键保持原有行为，并包含长期选词学习修复。安装器先以 root 登记受保护的系统程序，再以当前登录用户登记、启用输入源。相同版本重装也执行两次登记，登记失败则尝试恢复旧程序及其登记；不直接删除系统或应用缓存，不改写个人词库与凭据。此次本机菜单恢复包含重新添加等多个步骤，尚未独立证明唯一根因或重启后的持续性，见[菜单恢复报告](2026-11-17_input-menu-recovery.md)。
+
+本版将程序安装到 `/Library/Input Methods/SquirrelEnhancedDev.app`，需要管理员授权；个人数据仍留在原用户目录，旧用户目录程序移入可恢复备份。Chrome 156 的密码框焦点回归需要单独兼容修复，不能靠重装输入法解决，见[现场报告](2026-11-09_gray-input-chrome-regression.md)。
+
+本版继承0.1.42的语音收尾卡死、启动与凭据读取修复。完整安装包为 `SquirrelVoiceInput-0.1.20261117.46-arm64.pkg`，主程序及语音助手均为0.1.46。
 
 ## 系统要求与下载
 
@@ -8,13 +12,13 @@
 - 一个具有管理员安装权限的本地用户；安装目标是当前登录用户。
 - 语音功能需要自行开通的百炼或火山引擎语音服务及对应凭据。
 
-从 [v0.1.42 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.42) 下载 `.pkg` 与同名 `.pkg.sha256`。将两者放在同一目录，在该目录执行：
+从 [v0.1.46 发布页](https://github.com/weipao163-ctrl/squirrel-voice-input/releases/tag/v0.1.46) 下载 `.pkg` 与同名 `.pkg.sha256`。将两者放在同一目录，在该目录执行：
 
 ```bash
-shasum -a 256 -c SquirrelVoiceInput-0.1.20261031.42-arm64.pkg.sha256
+shasum -a 256 -c SquirrelVoiceInput-0.1.20261117.46-arm64.pkg.sha256
 ```
 
-确认显示 `OK`，再双击安装包。主程序与语音助手版本均为 0.1.42，Installer 的构建版本为 0.1.20261031.42。SHA-256 为 `c65d2aff373b0d48355a4382e8146cd4f3ddd950938de8714c9e9c3548116503`。
+确认显示 `OK`，再双击安装包。主程序与语音助手版本均为0.1.46，Installer 的构建版本为0.1.20261117.46。SHA-256 为 `af736a099c07b849b30dd9cf83d133cfc645fa5271967552cce65a1fdcf6a63c`。这是2026-11-17系统登记修订后的公开包；本机专用包含个人词库，不作为发布附件。
 
 ## 首次安装的系统放行
 
@@ -58,7 +62,7 @@ shasum -a 256 -c SquirrelVoiceInput-0.1.20261031.42-arm64.pkg.sha256
 
 ## 安装与更新位置
 
-程序安装到当前用户的 `~/Library/Input Methods/SquirrelEnhancedDev.app`。设置、个人词库与备份保存在 `~/Library/Application Support/SquirrelEnhancedDev`。增强版使用独立输入源和数据目录，更新保留自己的设置与词库；不覆盖正式鼠须管。
+旧版0.1.42安装到当前用户的 `~/Library/Input Methods/SquirrelEnhancedDev.app`；0.1.46安装到受保护的 `/Library/Input Methods/SquirrelEnhancedDev.app`。设置、个人词库与备份保存在 `~/Library/Application Support/SquirrelEnhancedDev`。增强版使用独立输入源和数据目录，更新保留自己的设置与词库；不覆盖正式鼠须管。
 
 安装包只含程序、公开默认词库与默认外观、安装脚本和许可证，不含开发者的个人词库、学习记录、用户设置、API Key 或签名私钥。本机迁移个人词库属于用户自己的操作，不会使词库进入发布包。
 

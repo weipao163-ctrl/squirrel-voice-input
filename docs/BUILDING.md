@@ -45,12 +45,16 @@ python3 tests/test_app_update_preparation.py
 # Lua 和安装事务：不操作正在使用的输入法
 .venv/bin/python tests/test_letter_selection.py
 .venv/bin/python tests/test_app_install_transaction.py --bash /bin/bash
+# 原生运行库的长期学习、进程重开及异常退出；只用合成隔离词库
+.venv/bin/python tests/run_learning_persistence.py --library /absolute/path/librime.1.dylib --plugin /absolute/path/librime-lua.dylib
 # 完整 Xcode 的 Core XCTest
 swift test --package-path enhanced-squirrel/Enhancements
 # 已安装增强版时，数字回归只使用新建隔离数据，不修改现用词库
 python3 tools/run_digit_input_regression.py
 # 先构建：生产控制器、真实 Rime 与隔离客户端的首键和响应检查
 python3 tools/run_native_keyboard_input.py
+# 鼠标长按协调器：注入时钟/按钮/目标，无全局输入、录音或云请求
+python3 tools/run_native_mouse_voice.py
 # 只有 CLT 时，使用 Swift Testing 运行同一组 Core 测试体
 python3 tools/run_macos_core.py
 # 离线原生目标快照夹具：不采音、不联网
