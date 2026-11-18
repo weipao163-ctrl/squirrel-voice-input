@@ -68,6 +68,8 @@ final class SquirrelInputController: IMKInputController {
   private var voiceAttempted = false
   private var voiceTerminal = false
   private var voiceCapturePending = false
+  private var voiceFromMouse = false
+  private var mouseVoiceTrigger: MouseVoiceTrigger?
   private var voiceLease: Timer?
   private var voiceDeadline: VoiceOwnerDeadline?
   private var enhancementObservers: [NSObjectProtocol] = []
@@ -236,6 +238,7 @@ final class SquirrelInputController: IMKInputController {
     }
     cancelPanelPositionUpdate()
     EnhancementBridge.shared.input = self
+    configureMouseVoice(EnhancementBridge.shared.settings)
     CandidatePositionStatistics.shared.increment("input_owner_recovered")
   }
 
@@ -315,6 +318,7 @@ final class SquirrelInputController: IMKInputController {
   }
 
   override func deactivateServer(_ sender: Any!) {
+    mouseVoiceTrigger?.interrupt(); mouseVoiceTrigger=nil
     enhancementInvalidated()
     inputGeneration &+= 1
     physicalKeys.lostLifecycle()
@@ -421,6 +425,7 @@ final class SquirrelInputController: IMKInputController {
   }
 
   deinit {
+    mouseVoiceTrigger?.interrupt(); mouseVoiceTrigger=nil
     panelPositionWork?.cancel()
     startupTimer?.invalidate()
     for observer in enhancementObservers { NotificationCenter.default.removeObserver(observer) }
@@ -1124,35 +1129,10 @@ extension SquirrelInputController: EnhancementInput {
     }
     switch action {
     case .start:
-      let identity = VoiceIdentity(generation:inputGeneration)
-      voiceIdentity = identity; voiceTarget = nil; voiceStopRelay.begin(identity)
-      voiceDeadline = VoiceOwnerDeadline(startedAt:ProcessInfo.processInfo.systemUptime,settings:settings.voice)
-      voiceAttempted = false; voiceTerminal = false; voiceCapturePending = true
-      voiceLease?.invalidate()
-      // The host is synchronously waiting for handle(_:client:) to return.
-      // Querying its AX server here can time out even in TextEdit. Reserve the
-      // physical cycle now, then verify the target after the event is returned.
-      let pressUptime=event.timestamp
-      let originalClient=client
-      let originalRange=client?.selectedRange()
-      let originalPID=NSWorkspace.shared.frontmostApplication?.processIdentifier
-      DispatchQueue.main.asyncAfter(deadline:.now()+0.02) { [weak self] in
-        self?.enhancementPrepareVoice(identity,settings:settings,pressUptime:pressUptime,
-          originalClient:originalClient,originalRange:originalRange,originalPID:originalPID)
-      }
+      enhancementReserveVoice(settings:settings,pressUptime:event.timestamp,mouse:false)
       return true
     case .stop:
-      if voiceCapturePending {
-        if let identity=voiceIdentity { _ = voiceStopRelay.release(identity,at:event.timestamp) }
-        voiceCapturePending=false; voiceTerminal=true
-        return true // A quick tap cannot start a delayed microphone task.
-      }
-      if let identity = voiceIdentity,
-         let release=voiceStopRelay.release(identity,at:event.timestamp),
-         let data = try? Wire.encode(release) {
-        voiceDeadline?.stop(at:release.uptime)
-        EnhancementBridge.shared.helper?.release(data)
-      }
+      enhancementReleaseVoice(at:event.timestamp)
       return true
     case .none: break
     }
@@ -1186,6 +1166,68 @@ extension SquirrelInputController: EnhancementInput {
     }
     return false
   }
+  private func enhancementReserveVoice(settings:Settings,pressUptime:TimeInterval,mouse:Bool) {
+    let identity = VoiceIdentity(generation:inputGeneration)
+    voiceIdentity = identity; voiceTarget = nil; voiceStopRelay.begin(identity)
+    voiceFromMouse = mouse
+    voiceDeadline = VoiceOwnerDeadline(startedAt:ProcessInfo.processInfo.systemUptime,settings:settings.voice)
+    voiceAttempted = false; voiceTerminal = false; voiceCapturePending = true
+    voiceLease?.invalidate()
+    // Return the host's event before querying its accessibility server.
+    let originalClient=client
+    let originalRange=client?.selectedRange()
+    let originalPID=NSWorkspace.shared.frontmostApplication?.processIdentifier
+    DispatchQueue.main.asyncAfter(deadline:.now()+0.02) { [weak self] in
+      self?.enhancementPrepareVoice(identity,settings:settings,pressUptime:pressUptime,
+        originalClient:originalClient,originalRange:originalRange,originalPID:originalPID)
+    }
+  }
+  private func enhancementReleaseVoice(at uptime:TimeInterval) {
+    guard let identity=voiceIdentity, !voiceTerminal else { return }
+    if voiceCapturePending {
+      _ = voiceStopRelay.release(identity,at:uptime)
+      voiceCapturePending=false; voiceTerminal=true
+      return // A released reservation cannot open the microphone later.
+    }
+    if let release=voiceStopRelay.release(identity,at:uptime),let data=try? Wire.encode(release) {
+      voiceDeadline?.stop(at:release.uptime)
+      EnhancementBridge.shared.helper?.release(data)
+    }
+  }
+  private func enhancementCanStartMouseVoice() -> Bool {
+    let settings=EnhancementBridge.shared.settings.voice
+    let front=NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+    return settings.enabled && settings.mouseHoldEnabled && EnhancementBridge.shared.input === self &&
+      EnhancementBridge.shared.connected && (voiceIdentity == nil || voiceTerminal) &&
+      !enhancementComposing() && client != nil && physicalKeys.held.isEmpty &&
+      AXIsProcessTrusted() && !IsSecureEventInputEnabled() && !MouseVoicePolicy.excludes(bundle:front) &&
+      inputApplicationIdentifier(client) == front &&
+      SquirrelInstaller.currentInputSourceID()?.hasPrefix("org.rime.inputmethod.SquirrelEnhanced.Development") == true
+  }
+  private func configureMouseVoice(_ value:Settings) {
+    guard value.voice.enabled && value.voice.mouseHoldEnabled && EnhancementBridge.shared.input === self &&
+        !MouseVoicePolicy.excludes(bundle:inputApplicationIdentifier(client)) else {
+      mouseVoiceTrigger?.interrupt(); mouseVoiceTrigger=nil; return
+    }
+    if let mouseVoiceTrigger, mouseVoiceTrigger.holdSeconds == value.voice.mouseHoldSeconds {
+      mouseVoiceTrigger.interrupt(); return
+    }
+    mouseVoiceTrigger?.interrupt()
+    mouseVoiceTrigger=MouseVoiceTrigger(holdSeconds:value.voice.mouseHoldSeconds,
+      canStart:{ [weak self] in self?.enhancementCanStartMouseVoice() == true },
+      begin:{ [weak self] uptime in
+        guard let self,self.enhancementCanStartMouseVoice() else { return false }
+        self.enhancementReserveVoice(settings:EnhancementBridge.shared.settings,pressUptime:uptime,mouse:true)
+        return true
+      },stop:{ [weak self] uptime in
+        guard let self,self.voiceFromMouse else { return }; self.enhancementReleaseVoice(at:uptime)
+      },cancel:{ [weak self] in
+        guard let self,self.voiceFromMouse else { return }; self.enhancementInvalidated()
+      })
+    if mouseVoiceTrigger?.available == false {
+      EnhancementBridge.shared.reply("左键长按监听未就绪；请检查输入法焦点检测权限后重新聚焦输入框。键盘热键仍可使用。")
+    }
+  }
   private func enhancementPrepareVoice(_ identity:VoiceIdentity,settings:Settings,pressUptime:TimeInterval,
       originalClient:IMKTextInput?,originalRange:NSRange?,originalPID:Int32?) {
     guard voiceIdentity == identity, !voiceTerminal, voiceCapturePending else { return }
@@ -1193,12 +1235,13 @@ extension SquirrelInputController: EnhancementInput {
       guard !voiceReleased, identity.generation == inputGeneration,
             EnhancementBridge.shared.settings.revision == settings.revision,
             EnhancementBridge.shared.settings.voice.enabled,EnhancementBridge.shared.connected,
+            (!voiceFromMouse || (EnhancementBridge.shared.settings.voice.mouseHoldEnabled && NSEvent.pressedMouseButtons & 1 != 0)),
             !enhancementComposing(),let client,let originalClient,client === originalClient,
             client.selectedRange() == originalRange,
             NSWorkspace.shared.frontmostApplication?.processIdentifier == originalPID else {
         throw EnhancementTarget.CaptureFailure.unavailable
       }
-      let target=try EnhancementTarget(client:client,generation:inputGeneration,ownedKeyCodes:settings.voice.binding?.codes ?? [])
+      let target=try EnhancementTarget(client:client,generation:inputGeneration,ownedKeyCodes:voiceFromMouse ? [] : (settings.voice.binding?.codes ?? []))
       guard target.matches(client:client,generation:inputGeneration) else { throw EnhancementTarget.CaptureFailure.unavailable }
       voiceCapturePending=false; voiceTarget=target
       target.invalidated={ [weak self] in self?.enhancementInvalidated() }
@@ -1295,6 +1338,7 @@ extension SquirrelInputController: EnhancementInput {
     }
   }
   func enhancementInvalidated() {
+    mouseVoiceTrigger?.interrupt()
     guard let identity = voiceIdentity, !voiceTerminal else { return }
     if voiceCapturePending {
       voiceCapturePending=false; voiceTerminal=true; physicalKeys.cancel()
@@ -1325,6 +1369,7 @@ extension SquirrelInputController: EnhancementInput {
   }
 #endif
   func enhancementConfigurationChanged(_ value:Settings) {
+    configureMouseVoice(value)
     if voiceIdentity == nil || voiceTerminal {
       EnhancementPreview.shared.configure(transparency:value.voice.previewTransparency,atCaret:value.voice.previewAtCaret)
     }

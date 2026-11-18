@@ -3,7 +3,10 @@ import CryptoKit
 import EnhancementCore
 
 enum EnhancementPatch {
-  private static let previousLuaSHA256 = "e6eeb8def9e9c96f9ff143c46c5eacc942fef0c38dfae718da0ee10a0db4694c"
+  private static let previousLuaVersions = [
+    "e6eeb8def9e9c96f9ff143c46c5eacc942fef0c38dfae718da0ee10a0db4694c": "before-0.1.25",
+    "f08184f0e90c7e159529c0ec54b638561bf23ca3e400822d909108ab2e97d0af": "before-durable-learning-v1"
+  ]
   static func upgradeBundledLua(directory:URL) throws {
     let fm = FileManager.default
     let lua = directory.appendingPathComponent("lua/letter_selection.lua")
@@ -18,10 +21,10 @@ enum EnhancementPatch {
     let replacement = try readBounded(bundled,limit:256 * 1024)
     guard current != replacement else { return }
     let digest = SHA256.hash(data:current).map { String(format:"%02x",$0) }.joined()
-    guard digest == previousLuaSHA256 else {
+    guard let backupSuffix = previousLuaVersions[digest] else {
       throw SettingsError.invalid("选词脚本已有自行修改；保留原文件，没有自动升级。")
     }
-    let backup = lua.appendingPathExtension("before-0.1.25")
+    let backup = lua.appendingPathExtension(backupSuffix)
     guard (try? backup.resourceValues(forKeys:[.isSymbolicLinkKey]).isSymbolicLink) != true else {
       throw SettingsError.invalid("选词脚本备份是符号链接；保留原文件。")
     }

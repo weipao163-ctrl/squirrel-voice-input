@@ -51,22 +51,21 @@ enum LaunchAdmission {
   }
 
   static func installedBundle(home: URL) -> URL {
-    home.resolvingSymlinksInPath().appendingPathComponent("Library/Input Methods", isDirectory: true)
-      .appendingPathComponent(bundleName, isDirectory: true).standardizedFileURL
+    InputMethodLocation.userApp(home: home)
   }
 
-  static func isInstalledBundle(_ bundle: URL, home: URL) -> Bool {
-    let expected = installedBundle(home: home)
+  static func isInstalledBundle(_ bundle: URL, home: URL, systemApp: URL = InputMethodLocation.systemApp) -> Bool {
     // Requiring the lexical path as well as its resolution rejects aliases or
     // a build/backup copy masquerading as the installed service.
-    return bundle.standardizedFileURL.path == expected.path &&
-      bundle.resolvingSymlinksInPath().standardizedFileURL.path == expected.path
+    return InputMethodLocation.matches(bundle, user: InputMethodLocation.userApp(home: home),
+      system: systemApp, systemTrusted: InputMethodLocation.protectedSystemApp(systemApp))
   }
 
   static func runService<Server: AnyObject>(bundle: URL, home: URL, identifier: String?, connectionName: String?,
+    systemApp: URL = InputMethodLocation.systemApp,
     acquireLease: (URL) throws -> AnyObject = { try InputMethodInstanceLock(directory: $0) },
     makeServer: (String, String) -> Server?, run: (Server) -> Void) throws {
-    guard isInstalledBundle(bundle, home: home) else { throw Failure.wrongLocation }
+    guard isInstalledBundle(bundle, home: home, systemApp: systemApp) else { throw Failure.wrongLocation }
     guard identifier == bundleIdentifier, connectionName == bundleIdentifier + "_Connection" else {
       throw Failure.wrongIdentity
     }
