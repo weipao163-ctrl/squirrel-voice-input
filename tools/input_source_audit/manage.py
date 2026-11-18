@@ -56,6 +56,9 @@ def job():
 
 def bootout():
     subprocess.run(['launchctl', 'bootout', f'gui/{os.getuid()}/{LABEL}'], capture_output=True)
+    deadline = time.monotonic() + 3
+    while job()['loaded'] and time.monotonic() < deadline:
+        time.sleep(0.05)
     if job()['loaded']:
         raise RuntimeError('Audit job is still loaded; publication cancelled')
 
@@ -126,6 +129,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix='compile-', dir=SUPPORT) as directory:
             candidate = Path(directory) / 'InputSourceAudit'
             subprocess.run(['xcrun', 'swiftc', '-O', '-swift-version', '5', '-sdk', sdk,
+                            str(ROOT / 'enhanced-squirrel/sources/InputMethodLocation.swift'),
                             *(str(SOURCE / name) for name in ['AuditCore.swift', 'PrivateLog.swift', 'main.swift']),
                             '-o', str(candidate)], check=True)
             subprocess.run(['codesign', '--force', '--sign', '-', str(candidate)], check=True)

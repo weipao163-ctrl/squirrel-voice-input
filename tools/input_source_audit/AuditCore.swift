@@ -66,8 +66,14 @@ func auditSecureOwner(session: [String: Any]?, consoleUsers: Any?, uid: Int) -> 
 }
 struct AuditSecurity: Codable, Equatable {
   let secureInput: Bool
+  // Historical property name. macOS can attribute a background holder to the
+  // foreground PID; this is evidence of attribution, NOT proof of ownership.
   let secureOwnerPID: Int?
   let screenLocked: Bool?
+  enum CodingKeys: String, CodingKey {
+    case secureInput, screenLocked
+    case secureOwnerPID = "systemAttributedPID"
+  }
 }
 struct AuditForeground: Codable, Equatable { let bundleID: String?; let pid: Int32? }
 struct AuditProcess: Codable, Equatable { let pid: Int32; let bundlePath: String? }

@@ -7,7 +7,7 @@ import Darwin
 let files = FileManager.default
 let home = files.homeDirectoryForCurrentUser
 let support = home.appendingPathComponent("Library/Application Support/SquirrelEnhancedDev/input-source-audit", isDirectory: true)
-let installedApp = home.appendingPathComponent("Library/Input Methods/SquirrelEnhancedDev.app", isDirectory: true)
+var installedApp: URL { InputMethodLocation.preferred(home: home) }
 let configPath = support.appendingPathComponent("audit.json")
 
 func property(_ source: TISInputSource, _ key: CFString) -> Any? {
