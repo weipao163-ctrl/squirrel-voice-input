@@ -151,6 +151,74 @@ local function commit_literal(env, suffix)
   disarm(env)
 end
 
+-- Rime's ordinary +1 combines cumulative frequency with a decaying recency
+-- bonus. An explicitly corrected homophone can therefore win briefly, then
+-- lose again to old frequency. Give only committed, non-first native phrases
+-- a bounded cumulative lead; keep the original userdb and native ranking.
+local function remember_corrections(env)
+  local ctx = env.engine.context
+  if not Memory or not enabled(env) or env.literal or ctx:get_option("ascii_mode") or
+      ctx:get_option("incognito_mode") or ctx:get_option("disable_user_dict") or
+      ctx:get_option("durable_learning_disabled") or
+      env.engine.schema.config:get_bool("letter_selection/durable_learning") == false or
+      env.engine.schema.config:get_bool("translator/enable_user_dict") == false then return end
+  for _, seg in ipairs(ctx.composition:toSegmentation():get_segments()) do
+    if seg.selected_index > 0 and seg:has_tag(env.tag) and not seg:has_tag("raw") then
+      local candidate = seg:get_selected_candidate()
+      local genuine = candidate and candidate:get_genuine()
+      local phrase = genuine and genuine:to_phrase()
+      -- Sentences, completion guesses, custom literals and foreign translators
+      -- keep their own learning rules. Do not learn previewed/cancelled menus.
+      if phrase and phrase.text:find("[\128-\255]") and not genuine:to_sentence() and candidate._end == seg._end and
+          not env.excluded[candidate.type] and phrase.entry.remaining_code_length == 0 then
+        local memory
+        local ok, err = pcall(function()
+          -- Construct AFTER the native commit listeners, so
+          -- this object reads the current shared userdb tick, never a stale one.
+          memory = Memory(env.engine, env.engine.schema, "translator")
+          if not memory.user_dict or not memory.user_dict.loaded or
+              memory.lang_name ~= phrase.lang_name then return end
+          local code = table.concat(memory:decode(phrase.code), " ")
+          if code == "" then return end
+          -- LookupWords queries the committed DB, not the native pending write
+          -- batch. Flush it before comparing counts, including this selection.
+          memory:start_session()
+          local chosen, other = 0, 0
+          memory:user_lookup(code, false)
+          for entry in memory:iter_user() do
+            if entry.custom_code == code .. " " then
+              if entry.text == phrase.text then chosen = entry.commit_count
+              else other = math.max(other, entry.commit_count) end
+            end
+          end
+          local extra = math.min(1000, math.max(0, other + 4 - chosen))
+          if extra > 0 then
+            if not memory:update_candidate(genuine, extra) then error("userdb_update_failed") end
+          end
+          -- Flush this explicit choice, including native learning, now instead
+          -- of leaving the last correction in a pending transaction until exit.
+          memory:finish_session()
+        end)
+        if memory then memory:disconnect() end
+        property(ctx, "_letter_selection_learning_error", ok and "" or tostring(err))
+        -- Loading/updating a supplementary learning path must never lose input.
+      end
+    end
+  end
+end
+
+local function connect_learning(env)
+  if env.learning_connected or not Memory then return end
+  -- Processors are constructed before translators. Register on first actual
+  -- input, after all translators have installed their native commit listeners.
+  -- A numbered notifier group would run BEFORE Rime's ungrouped listeners.
+  env.learning_connected = true
+  env.connections[#env.connections + 1] = env.engine.context.commit_notifier:connect(function()
+    local ok, err = pcall(remember_corrections, env)
+    if not ok then property(env.engine.context, "_letter_selection_learning_error", tostring(err)) end
+  end)
+end
+
 function M.init(env)
   local config, ctx = env.engine.schema.config, env.engine.context
   env.enabled = config:get_bool("letter_selection/enabled") ~= false
@@ -230,7 +298,10 @@ function M.init(env)
   property(ctx, "_letter_selection_label_backend", env.can_set_keys and "schema_select_keys" or "unavailable")
   property(ctx, "_letter_selection_lua_version", _VERSION)
   env.armed, env.literal, env.connections = false, false, {}
-  env.connections[#env.connections + 1] = ctx.update_notifier:connect(function() synchronize(env) end)
+  env.connections[#env.connections + 1] = ctx.update_notifier:connect(function()
+    if ctx:is_composing() then connect_learning(env) end
+    synchronize(env)
+  end)
   env.connections[#env.connections + 1] = ctx.select_notifier:connect(function()
     -- Engine's OnSelect has already advanced/committed the segment. Keep the native
     -- selection/learning path, and re-arm remaining input after letters or mouse.
@@ -276,6 +347,7 @@ end
 
 function M.func(key, env)
   local ctx = env.engine.context
+  connect_learning(env)
   synchronize(env)
   if key:release() then return NOOP end
   -- A shortcut is never a letter selection, even when its keycode is a letter.
