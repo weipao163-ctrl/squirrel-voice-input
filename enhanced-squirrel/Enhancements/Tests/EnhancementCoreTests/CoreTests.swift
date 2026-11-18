@@ -2,6 +2,158 @@ import XCTest
 @testable import EnhancementCore
 
 final class CoreTests:XCTestCase {
+  func testMouseHoldDefaultsAndSettingsRoundTripPreserveKeyboardBinding() throws {
+    let old=Data("{\"enabled\":false,\"binding\":{\"codes\":[61]}}".utf8)
+    var settings=try JSONDecoder().decode(VoiceSettings.self,from:old)
+    XCTAssertFalse(settings.mouseHoldEnabled)
+    XCTAssertEqual(settings.mouseHoldSeconds,1)
+    XCTAssertEqual(settings.binding,TriggerBinding(codes:[61]))
+    settings.mouseHoldEnabled=true
+    settings.mouseHoldSeconds=0.1
+    let reopened=try JSONDecoder().decode(VoiceSettings.self,from:JSONEncoder().encode(settings))
+    XCTAssertTrue(reopened.mouseHoldEnabled)
+    XCTAssertEqual(reopened.mouseHoldSeconds,0.1)
+    XCTAssertEqual(reopened.binding,settings.binding)
+    XCTAssertThrowsError(try JSONDecoder().decode(VoiceSettings.self,from:Data("{\"mouseHoldEnabled\":\"yes\"}".utf8)))
+  }
+  func testMouseHoldSettingsAcceptAllThirtyTenthsAndPersistEndpoints() throws {
+    for tenth in 1...30 {
+      var voice=VoiceSettings(); voice.mouseHoldSeconds=Double(tenth)/10
+      XCTAssertNoThrow(try voice.validate())
+      let saved=try JSONEncoder().encode(voice)
+      let loaded=try JSONDecoder().decode(VoiceSettings.self,from:saved)
+      XCTAssertEqual(loaded.mouseHoldSeconds,voice.mouseHoldSeconds)
+    }
+  }
+  func testMouseHoldSettingsRejectInvalidDelayEvenWhenFeatureDisabled() {
+    for seconds in [0.0,0.0999,3.0001,Double.nan,Double.infinity,-Double.infinity] {
+      var voice=VoiceSettings(); voice.mouseHoldSeconds=seconds
+      XCTAssertThrowsError(try voice.validate())
+      var cycle=MouseHoldCycle(holdSeconds:seconds)
+      XCTAssertFalse(cycle.press(at:10,x:0,y:0,eligible:true,singleClick:true,modified:false))
+      XCTAssertEqual(cycle.deadline(at:13,leftPressed:true,eligible:true),.none)
+    }
+  }
+  func testMouseHoldEveryConfiguredDelayStartsAtItsExactDeadline() {
+    for tenth in 1...30 {
+      let delay=Double(tenth)/10
+      var cycle=MouseHoldCycle(holdSeconds:delay)
+      XCTAssertTrue(cycle.press(at:10,x:0,y:0,eligible:true,singleClick:true,modified:false))
+      XCTAssertEqual(cycle.deadline(at:10+delay-0.000001,leftPressed:true,eligible:true),.none)
+      XCTAssertEqual(cycle.deadline(at:10+delay,leftPressed:true,eligible:true),.start)
+      XCTAssertEqual(cycle.release(),.stop)
+    }
+  }
+  func testMouseHoldDelayUsesAbsoluteDeadlineAtLongUptime() {
+    var cycle=MouseHoldCycle(holdSeconds:0.1)
+    let uptime=1234567.89
+    XCTAssertTrue(cycle.press(at:uptime,x:0,y:0,eligible:true,singleClick:true,modified:false))
+    XCTAssertEqual(cycle.deadline(at:uptime+0.1,leftPressed:true,eligible:true),.start)
+  }
+  func testMouseHoldThreeSecondDelayKeepsItsOwnLateCallbackLimit() {
+    var cycle=MouseHoldCycle(holdSeconds:3)
+    _ = cycle.press(at:10,x:0,y:0,eligible:true,singleClick:true,modified:false)
+    XCTAssertEqual(cycle.deadline(at:11,leftPressed:true,eligible:true),.none)
+    XCTAssertEqual(cycle.deadline(at:13.5,leftPressed:true,eligible:true),.start)
+    var late=MouseHoldCycle(holdSeconds:3)
+    _ = late.press(at:10,x:0,y:0,eligible:true,singleClick:true,modified:false)
+    XCTAssertEqual(late.deadline(at:13.5001,leftPressed:true,eligible:true),.none)
+    XCTAssertFalse(late.pending)
+  }
+  func testMouseHoldCanBeEnabledWithoutReplacingKeyboardBinding() throws {
+    var settings=VoiceSettings(); settings.enabled=true
+    settings.region = .beijing; settings.workspace="workspace"; settings.credentialReference="saved-reference"
+    XCTAssertThrowsError(try settings.validate())
+    settings.mouseHoldEnabled=true
+    XCTAssertNoThrow(try settings.validate())
+    settings.binding=TriggerBinding(codes:[58,61])
+    XCTAssertNoThrow(try settings.validate())
+    settings.mouseHoldEnabled=false
+    XCTAssertEqual(settings.binding,TriggerBinding(codes:[58,61]))
+    XCTAssertNoThrow(try settings.validate())
+  }
+  func testMouseHoldShortClickAndExactOneSecondStart() {
+    var cycle=MouseHoldCycle()
+    XCTAssertTrue(cycle.press(at:10,x:0,y:0,eligible:true,singleClick:true,modified:false))
+    XCTAssertEqual(cycle.deadline(at:10.99,leftPressed:true,eligible:true),.none)
+    XCTAssertEqual(cycle.release(),.none)
+    XCTAssertEqual(cycle.deadline(at:11,leftPressed:true,eligible:true),.none)
+    XCTAssertTrue(cycle.press(at:20,x:0,y:0,eligible:true,singleClick:true,modified:false))
+    XCTAssertEqual(cycle.deadline(at:21,leftPressed:true,eligible:true),.start)
+    XCTAssertEqual(cycle.deadline(at:21.1,leftPressed:true,eligible:true),.none)
+    XCTAssertEqual(cycle.release(),.stop)
+    XCTAssertEqual(cycle.release(),.none)
+  }
+  func testMouseHoldBusyPressNeverQueuesWhenItBecomesIdle() {
+    var cycle=MouseHoldCycle()
+    XCTAssertFalse(cycle.press(at:10,x:0,y:0,eligible:false,singleClick:true,modified:false))
+    XCTAssertEqual(cycle.deadline(at:11,leftPressed:true,eligible:true),.none)
+    XCTAssertFalse(cycle.press(at:11,x:0,y:0,eligible:true,singleClick:true,modified:false))
+    XCTAssertEqual(cycle.release(),.none)
+    XCTAssertTrue(cycle.press(at:12,x:0,y:0,eligible:true,singleClick:true,modified:false))
+  }
+  func testMouseHoldDragCancelsPendingAndActiveCapture() {
+    var cycle=MouseHoldCycle()
+    XCTAssertTrue(cycle.press(at:10,x:0,y:0,eligible:true,singleClick:true,modified:false))
+    XCTAssertEqual(cycle.moved(x:6,y:0),.none)
+    XCTAssertTrue(cycle.pending)
+    XCTAssertEqual(cycle.moved(x:6.1,y:0),.none)
+    XCTAssertFalse(cycle.pending)
+    XCTAssertEqual(cycle.deadline(at:11,leftPressed:true,eligible:true),.none)
+    _ = cycle.release()
+    _ = cycle.press(at:20,x:0,y:0,eligible:true,singleClick:true,modified:false)
+    XCTAssertEqual(cycle.deadline(at:21,leftPressed:true,eligible:true),.start)
+    XCTAssertEqual(cycle.moved(x:7,y:0),.cancel)
+    XCTAssertEqual(cycle.release(),.none)
+  }
+  func testMouseHoldDelayedCallbackMissingReleaseAndFocusLossDoNotStart() {
+    for (time,pressed,eligible) in [(11.6,true,true),(9.0,true,true),(Double.nan,true,true),(11.0,false,true),(11.0,true,false)] {
+      var cycle=MouseHoldCycle()
+      _ = cycle.press(at:10,x:0,y:0,eligible:true,singleClick:true,modified:false)
+      XCTAssertEqual(cycle.deadline(at:time,leftPressed:pressed,eligible:eligible),.none)
+      XCTAssertFalse(cycle.pending)
+    }
+  }
+  func testMouseHoldInterruptedPressRequiresReleaseBeforeRearming() {
+    var cycle=MouseHoldCycle()
+    _ = cycle.press(at:10,x:0,y:0,eligible:true,singleClick:true,modified:false)
+    XCTAssertEqual(cycle.deadline(at:11,leftPressed:true,eligible:true),.start)
+    XCTAssertEqual(cycle.interrupt(),.cancel)
+    XCTAssertEqual(cycle.interrupt(),.none)
+    XCTAssertFalse(cycle.press(at:12,x:0,y:0,eligible:true,singleClick:true,modified:false))
+    XCTAssertEqual(cycle.release(),.none)
+    XCTAssertTrue(cycle.press(at:13,x:0,y:0,eligible:true,singleClick:true,modified:false))
+  }
+  func testMouseHoldDoubleClickModifierAndInvalidPressDoNotArm() {
+    for (single,modified,time,x) in [(false,false,10.0,0.0),(true,true,10.0,0.0),(true,false,-1.0,0.0),(true,false,10.0,Double.infinity)] {
+      var cycle=MouseHoldCycle()
+      XCTAssertFalse(cycle.press(at:time,x:x,y:0,eligible:true,singleClick:single,modified:modified))
+      XCTAssertFalse(cycle.pending)
+    }
+  }
+  func testMouseVoiceWeChatExclusionDoesNotDisableOtherAppsOrKeyboard() {
+    for bundle in ["com.tencent.xinWeChat","com.tencent.WeChat","com.tencent.xinwechat.helper"] {
+      XCTAssertTrue(MouseVoicePolicy.excludes(bundle:bundle))
+      var keys=PhysicalKeys()
+      XCTAssertEqual(keys.event(code:61,down:true,repeated:false,binding:TriggerBinding(codes:[61]),canStart:true),.start)
+      XCTAssertEqual(keys.event(code:61,down:false,repeated:false,binding:nil,canStart:false),.stop)
+    }
+    XCTAssertFalse(MouseVoicePolicy.excludes(bundle:"com.tencent.qq"))
+    XCTAssertFalse(MouseVoicePolicy.excludes(bundle:"com.google.Chrome"))
+    XCTAssertFalse(MouseVoicePolicy.excludes(bundle:"com.tencent.wechat-unrelated"))
+    XCTAssertTrue(MouseVoicePolicy.excludes(bundle:nil))
+  }
+  func testMouseVoiceRequiresWritableNonSecureEnabledTextField() {
+    for role in ["AXTextField","AXTextArea","AXComboBox"] {
+      XCTAssertTrue(MouseVoicePolicy.allowsFocusedElement(role:role,subrole:nil,enabled:true,writable:true))
+      XCTAssertFalse(MouseVoicePolicy.allowsFocusedElement(role:role,subrole:"AXSecureTextField",enabled:true,writable:true))
+      XCTAssertFalse(MouseVoicePolicy.allowsFocusedElement(role:role,subrole:nil,enabled:false,writable:true))
+      XCTAssertFalse(MouseVoicePolicy.allowsFocusedElement(role:role,subrole:nil,enabled:true,writable:false))
+    }
+    for role in ["AXButton","AXStaticText","AXLink","AXWebArea","AXSecureTextField",""] {
+      XCTAssertFalse(MouseVoicePolicy.allowsFocusedElement(role:role,subrole:nil,enabled:true,writable:true))
+    }
+  }
   func testLocalModifierEventCarriesSideStateWithoutHardwareQuery() {
     let pairs:[(UInt16,UInt16,UInt64,UInt64,UInt64)] = [
       (56,60,0x20000,0x2,0x4),(59,62,0x40000,0x1,0x2000),
