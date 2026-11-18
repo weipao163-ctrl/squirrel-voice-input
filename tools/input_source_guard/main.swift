@@ -8,7 +8,7 @@ let allowedModes = Set([bundleID + ".Hans", bundleID + ".Hant"])
 let files = FileManager.default
 let home = files.homeDirectoryForCurrentUser
 let support = home.appendingPathComponent("Library/Application Support/SquirrelEnhancedDev/input-source-guard", isDirectory: true)
-let app = home.appendingPathComponent("Library/Input Methods/SquirrelEnhancedDev.app", isDirectory: true)
+let app = InputMethodLocation.preferred(home: home)
 let configURL = support.appendingPathComponent("guard.json")
 let stateURL = support.appendingPathComponent("state.json")
 let statusOnly = CommandLine.arguments.dropFirst().elementsEqual(["--status"])
@@ -98,7 +98,8 @@ let healthy = validApp && persistence.valid && required.isSubset(of: actualEnabl
 let secureInput = IsSecureEventInputEnabled()
 let screenLocked = locked()
 let settingsFront = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.systempreferences"
-let installLock = files.fileExists(atPath: app.path + ".install-lock")
+let installLock = files.fileExists(atPath: app.path + ".install-lock") ||
+  files.fileExists(atPath: InputMethodLocation.userApp(home: home).path + ".install-lock")
 let deferred = secureInput || screenLocked || settingsFront || installLock || !persistence.valid
 if statusOnly {
   let state = read(GuardState.self, stateURL)
@@ -134,6 +135,7 @@ guard appIdentityValid(), signatureValid() else { logEvent("repair_validation_fa
 guard let latest = read(Configuration.self, configURL), latest.enabled,
       !latest.modes.isEmpty, Set(latest.modes).isSubset(of: allowedModes), Set(latest.modes) == desired,
       !files.fileExists(atPath: app.path + ".install-lock"), !IsSecureEventInputEnabled(), !locked(),
+      !files.fileExists(atPath: InputMethodLocation.userApp(home: home).path + ".install-lock"),
       NSWorkspace.shared.frontmostApplication?.bundleIdentifier != "com.apple.systempreferences",
       appIdentityValid() else { logEvent("repair_deferred"); exit(0) }
 let latestEnabled = enabledIDs()

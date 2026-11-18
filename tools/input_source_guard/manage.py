@@ -71,6 +71,7 @@ def main():
             output = Path(directory) / 'InputSourceGuard'
             source = Path(__file__).resolve().parent
             subprocess.run(['xcrun', 'swiftc', '-O', '-swift-version', '5', '-sdk', sdk,
+                            str(ROOT / 'enhanced-squirrel/sources/InputMethodLocation.swift'),
                             str(source / 'GuardPolicy.swift'), str(source / 'main.swift'), '-o', str(output)], check=True)
             subprocess.run(['codesign', '--force', '--sign', '-', str(output)], check=True)
             subprocess.run(['codesign', '--verify', '--strict', str(output)], check=True)
