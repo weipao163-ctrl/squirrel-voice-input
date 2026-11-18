@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EFCB17000000000000000001 /* MouseVoiceTrigger.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCB17000000000000000002; };
+		EFCAFE00000000000000000D /* InputMethodLocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE00000000000000000E; };
 		EFCAFE00000000000000000B /* LaunchAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE00000000000000000C; };
 		EFCAFE000000000000000007 /* VoiceTargetMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE000000000000000008; };
 		EFCAFE000000000000000005 /* VoiceTargetSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCAFE000000000000000006; };
@@ -236,6 +238,8 @@ EE0000000000000000000009 /* EnhancementDeployment.swift in Sources */ = {isa = P
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		EFCB17000000000000000002 /* MouseVoiceTrigger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MouseVoiceTrigger.swift; path = sources/MouseVoiceTrigger.swift; sourceTree = "<group>"; };
+		EFCAFE00000000000000000E /* InputMethodLocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sources/InputMethodLocation.swift; sourceTree = SOURCE_ROOT; };
 		EFCAFE00000000000000000C /* LaunchAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sources/LaunchAdmission.swift; sourceTree = SOURCE_ROOT; };
 		EFCAFE000000000000000008 /* VoiceTargetMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTargetMonitor.swift; sourceTree = "<group>"; };
 		EFCAFE000000000000000006 /* VoiceTargetSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sources/VoiceTargetSelection.swift; sourceTree = SOURCE_ROOT; };
@@ -369,6 +373,7 @@ EE000000000000000000000A /* EnhancementDeployment.swift */ = {isa = PBXFileRefer
 				EFCAFE000000000000000004 /* KeyboardInputPosition.swift */,
 				EFCAFE00000000000000000A /* CandidatePositionRecovery.swift */,
 				EFCAFE000000000000000008 /* VoiceTargetMonitor.swift */,
+				EFCB17000000000000000002 /* MouseVoiceTrigger.swift */,
 				EFCAFE000000000000000006 /* VoiceTargetSelection.swift */,
 				EFCAFE000000000000000002 /* NativeVoiceTargetSnapshot.swift */,
 				B38E9B942BEAFEFD0036ABEF /* SquirrelInputController.swift */,
@@ -376,6 +381,7 @@ EE000000000000000000000A /* EnhancementDeployment.swift */ = {isa = PBXFileRefer
 				B397712C2BEEB39D0093A49B /* InputSource.swift */,
 				B397712E2BEECBED0093A49B /* Main.swift */,
 				EFCAFE00000000000000000C /* LaunchAdmission.swift */,
+				EFCAFE00000000000000000E /* InputMethodLocation.swift */,
 				B39771262BED9B250093A49B /* SquirrelTheme.swift */,
 				B397712A2BEE4C160093A49B /* SquirrelPanel.swift */,
 				B39771282BEDAF4A0093A49B /* SquirrelView.swift */,
@@ -652,6 +658,7 @@ EE0000000000000000000009 /* EnhancementDeployment.swift in Sources */,
 				EFCAFE000000000000000003 /* KeyboardInputPosition.swift in Sources */,
 				EFCAFE000000000000000009 /* CandidatePositionRecovery.swift in Sources */,
 				EFCAFE000000000000000007 /* VoiceTargetMonitor.swift in Sources */,
+				EFCB17000000000000000001 /* MouseVoiceTrigger.swift in Sources */,
 				EFCAFE000000000000000005 /* VoiceTargetSelection.swift in Sources */,
 				EFCAFE000000000000000001 /* NativeVoiceTargetSnapshot.swift in Sources */,
 				EE0000000000000000000001 /* EnhancementBridge.swift in Sources */,
@@ -661,6 +668,7 @@ EE0000000000000000000009 /* EnhancementDeployment.swift in Sources */,
 				B39771252BED899F0093A49B /* SquirrelConfig.swift in Sources */,
 				B397712F2BEECBED0093A49B /* Main.swift in Sources */,
 				EFCAFE00000000000000000B /* LaunchAdmission.swift in Sources */,
+				EFCAFE00000000000000000D /* InputMethodLocation.swift in Sources */,
 				B397712D2BEEB39D0093A49B /* InputSource.swift in Sources */,
 				B397712B2BEE4C160093A49B /* SquirrelPanel.swift in Sources */,
 				B38E9B912BE9AE1E0036ABEF /* SquirrelApplicationDelegate.swift in Sources */,
@@ -694,7 +702,7 @@ EE0000000000000000000033 = {isa = XCSwiftPackageProductDependency; package = EE0
 				CODE_SIGN_ENTITLEMENTS = resources/Squirrel.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 0.1.42;
+				CURRENT_PROJECT_VERSION = 0.1.46;
 				DEAD_CODE_STRIPPING = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -750,7 +758,7 @@ EE0000000000000000000033 = {isa = XCSwiftPackageProductDependency; package = EE0
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = resources/Squirrel.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 0.1.42;
+				CURRENT_PROJECT_VERSION = 0.1.46;
 				DEAD_CODE_STRIPPING = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
