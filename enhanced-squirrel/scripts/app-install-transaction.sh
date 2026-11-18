@@ -5,6 +5,11 @@ run_input_method_registrar() {
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister "$@"
 }
 
+# The system installer supplies user-session registration and root ownership.
+# The ordinary developer transaction retains its unprivileged behavior.
+register_input_method_target() { "$1/Contents/MacOS/SquirrelEnhancedDev" --register-input-source; }
+prepare_input_method_stage() { :; }
+
 unregister_input_method_path() {
   local path="$1" output status expected
   if output="$(run_input_method_registrar -u "$path" 2>&1)"; then return 0; else status=$?; fi
@@ -90,7 +95,7 @@ install_development_app() (
       if [[ "$moved_old" == 1 && -d "$backup" && ! -e "$target" && ! -L "$target" ]]; then
         mv "$backup" "$target" || echo "旧包恢复失败；可恢复备份：$backup" >&2
         if [[ -d "$target" ]]; then
-          "$target/Contents/MacOS/SquirrelEnhancedDev" --register-input-source ||
+          register_input_method_target "$target" ||
             echo '旧包文件已恢复，但系统注册刷新失败；请重新安装或注销后登录。' >&2
         fi
       fi
@@ -107,7 +112,7 @@ install_development_app() (
   if [[ -d "$target" ]] && diff -qr "$source_app" "$target" >/dev/null 2>&1; then
     codesign --verify --deep --strict "$target"
     unregister_input_method_copy "$source_app"
-    "$target/Contents/MacOS/SquirrelEnhancedDev" --register-input-source
+    register_input_method_target "$target"
     echo '相同开发包已安装；未复制、未增加备份，已刷新系统注册。'
     exit 0
   fi
@@ -118,6 +123,7 @@ install_development_app() (
   printf 'source=%s\ntarget=%s\nstage=%s\nbackup=%s\nphase=prepared\n' \
     "$source_app" "$target" "$stage" "$backup" > "$lock/transaction.txt"
   ditto "$source_app" "$stage"
+  prepare_input_method_stage "$stage"
   codesign --verify --deep --strict "$stage"
   if [[ -d "$target" ]]; then
     printf 'phase=moving-old\n' >> "$lock/transaction.txt"
@@ -128,6 +134,6 @@ install_development_app() (
   installed_new=1; mv "$stage" "$target"; stage=''
   printf 'phase=registering\n' >> "$lock/transaction.txt"
   unregister_input_method_copy "$source_app"
-  "$target/Contents/MacOS/SquirrelEnhancedDev" --register-input-source
+  register_input_method_target "$target"
   echo '已安装/注册。请在系统设置手动添加开发输入源；无需替换正式版。'
 )

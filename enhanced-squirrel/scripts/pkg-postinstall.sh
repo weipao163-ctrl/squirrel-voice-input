@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installer executes this script only after the human chooses Install.
-# Drop privilege before touching the current user's independent input method.
+# System app files are root-owned; user-session operations run without root.
 set -euo pipefail
 [[ "${3:-}" == / ]] || { echo '只支持当前启动磁盘，不安装到其他卷。' >&2; exit 2; }
 [[ "$(id -u)" == 0 ]] || { echo '请通过 macOS 安装器打开此安装包。' >&2; exit 2; }
@@ -18,9 +18,8 @@ account_home="$(/usr/bin/dscl . -read "/Users/$account" NFSHomeDirectory | /usr/
 staging="$(/usr/bin/mktemp -d /private/tmp/sqv-install.XXXXXX)"
 trap '/bin/rm -rf "$staging"' EXIT
 /usr/bin/ditto "$script_directory/SquirrelEnhancedDev.app" "$staging/SquirrelEnhancedDev.app"
-/bin/cp "$script_directory/pkg-user-install.sh" "$script_directory/app-install-transaction.sh" "$script_directory/app-update-preparation.sh" "$staging/"
+/bin/cp "$script_directory/pkg-system-install.sh" "$script_directory/app-install-transaction.sh" "$staging/"
 /usr/sbin/chown -R root:wheel "$staging"
 /bin/chmod -R a+rX "$staging"
 /bin/chmod 755 "$staging"
-/bin/launchctl asuser "$account_uid" /usr/bin/sudo -H -u "$account" \
-  /bin/bash "$staging/pkg-user-install.sh" "$staging/SquirrelEnhancedDev.app" "$account_home"
+/bin/bash "$staging/pkg-system-install.sh" "$staging/SquirrelEnhancedDev.app" "$account" "$account_uid" "$account_home"
