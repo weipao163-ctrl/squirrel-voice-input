@@ -316,6 +316,10 @@ struct SettingsView: View {
   @State private var deployConfirm = false
   @State private var migrateConfirm = false
   @State private var recoveryConfirm = false
+  private var mouseHoldTenths:Binding<Int> {
+    Binding(get:{ Int((model.draft.voice.mouseHoldSeconds * 10).rounded()) },
+            set:{ model.draft.voice.mouseHoldSeconds = Double($0) / 10 })
+  }
   private var profile:Binding<LetterProfile> {
     Binding(get:{ model.draft.letters[model.selectedSchema] ?? LetterProfile() },
             set:{ if !model.selectedSchema.isEmpty { model.draft.letters[model.selectedSchema] = $0 } })
@@ -387,6 +391,12 @@ struct SettingsView: View {
           Form {
             Toggle("启用语音输入",isOn:$model.draft.voice.enabled)
             VoiceInputModeSettings(model:model)
+            Toggle("长按鼠标左键启动语音输入",isOn:$model.draft.voice.mouseHoldEnabled)
+              .accessibilityIdentifier("voiceMouseHoldEnabled")
+            Stepper(String(format:"左键长按启动时间：%.1f 秒",model.draft.voice.mouseHoldSeconds),value:mouseHoldTenths,in:1...30)
+              .accessibilityIdentifier("voiceMouseHoldSeconds")
+              .accessibilityValue(String(format:"%.1f 秒",model.draft.voice.mouseHoldSeconds))
+            Text("启动时间可设为 0.1～3.0 秒，每次调整 0.1 秒。保存后从下一次完整按压生效：在普通输入框内按住左键达到设定时间开始说话，松开结束。短按、拖选和按钮不触发；微信内自动停用左键触发，键盘热键照常使用。需要输入法焦点检测权限。").font(.caption).foregroundStyle(.secondary)
             Text(model.draft.voice.model.isDoubao ? "推理提供方：火山引擎豆包语音" : "推理提供方：阿里云百炼")
             Picker("识别模型",selection:$model.draft.voice.model) {
               ForEach(VoiceModel.allCases,id:\.self) { value in
