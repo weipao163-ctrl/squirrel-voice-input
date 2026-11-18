@@ -1,5 +1,6 @@
 """Real, certificate-signed private UNIX socket peers. No IMK install, keys or audio."""
 from datetime import datetime, timezone
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -17,6 +18,9 @@ def run(argv, timeout=60):
 
 def main():
     project=ROOT/'enhanced-squirrel'
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--app',type=Path,default=project/'build/CLT/SquirrelEnhancedDev.app')
+    args=parser.parse_args()
     sdk=json.loads((project/'build/evidence/clt-build-complete.json').read_text())['sdk']
     (project/'build').mkdir(exist_ok=True)
     (ROOT/'evidence').mkdir(exist_ok=True)
@@ -32,7 +36,7 @@ def main():
     objects=[*sorted((bins/'EnhancementCore.build').glob('*.swift.o')),*sorted((bins/'EnhancementIPC.build').glob('*.swift.o'))]
     run(['xcrun','swiftc','-sdk',sdk,'-parse-as-library','-I',bins/'Modules',probe_source,*objects,'-o',unsigned])
     validation=json.loads(run([unsigned,'validate']).stdout)
-    fingerprint=plistlib.loads((project/'build/CLT/SquirrelEnhancedDev.app/Contents/Info.plist').read_bytes())['SquirrelEnhancementCertificateSHA1']
+    fingerprint=plistlib.loads((args.app/'Contents/Info.plist').read_bytes())['SquirrelEnhancementCertificateSHA1']
     assert len(fingerprint)==40
     # A second signer is an adversarial fixture, never a product identity.
     run(['openssl','req','-new','-x509','-newkey','rsa:2048','-sha256','-nodes','-days','2',

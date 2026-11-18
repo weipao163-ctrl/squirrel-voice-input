@@ -20,7 +20,8 @@ def main():
     delegate = ROOT / "enhanced-squirrel/sources/SquirrelApplicationDelegate.swift"
     probe = ROOT / "tools/NativeLaunchAdmissionProbe.swift"
     binary = work / "LaunchAdmissionProbe"
-    build = subprocess.run(["xcrun", "swiftc", "-O", "-swift-version", "5", str(production), str(probe),
+    location = production.with_name("InputMethodLocation.swift")
+    build = subprocess.run(["xcrun", "swiftc", "-O", "-swift-version", "5", str(location), str(production), str(probe),
                             "-o", str(binary)], capture_output=True, text=True, timeout=120)
     (evidence / "launch-admission-probe.compile.txt").write_text(build.stdout + build.stderr)
     if build.returncode:
@@ -49,7 +50,7 @@ def main():
     report.update(status="PASS" if all(report["checks"].values()) else "FAIL",
                   utc=datetime.now(timezone.utc).isoformat(), exit_code=run.returncode,
                   source_sha256={str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-                                 for p in [production, entry, delegate, probe, Path(__file__)]})
+                                 for p in [location, production, entry, delegate, probe, Path(__file__)]})
     (evidence / "launch-admission-probe.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return run.returncode or int(report["status"] != "PASS")

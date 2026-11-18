@@ -21,7 +21,7 @@ enum NativeLaunchAdmissionProbe {
           try LaunchAdmission.withEngineLease(home: home) { /* fake deployment */ }
         } else {
           try LaunchAdmission.runService(bundle: LaunchAdmission.installedBundle(home: home), home: home,
-            identifier: identifier, connectionName: connection,
+            identifier: identifier, connectionName: connection, systemApp: home.appendingPathComponent("test-system-app"),
             makeServer: { _, _ in Token("fake-server", Trace()) }, run: { _ in })
         }
         exit(0)
@@ -58,15 +58,21 @@ enum NativeLaunchAdmissionProbe {
       LaunchAdmission.action(arguments: [$0, "Hant"]) == .rejected
     })
     check("select_rejects_multiple_modes", LaunchAdmission.action(arguments: ["--select-input-source", identifier + ".Hans", identifier + ".Hant"]) == .rejected)
-    check("exact_installed_path_accepted", LaunchAdmission.isInstalledBundle(app, home: home))
+    check("exact_installed_path_accepted", LaunchAdmission.isInstalledBundle(app, home: home, systemApp: home.appendingPathComponent("test-system-app")))
+    let user = InputMethodLocation.userApp(home: home)
+    let system = home.appendingPathComponent("SystemLibrary/Input Methods/SquirrelEnhancedDev.app")
+    check("protected_system_install_is_canonical", InputMethodLocation.matches(system, user: user, system: system, systemTrusted: true))
+    check("user_copy_cannot_compete_with_system_install", !InputMethodLocation.matches(user, user: user, system: system, systemTrusted: true))
+    check("untrusted_system_path_is_rejected", !InputMethodLocation.matches(system, user: user, system: system, systemTrusted: false))
+    check("user_install_remains_supported_without_system_install", InputMethodLocation.matches(user, user: user, system: system, systemTrusted: false))
     check("build_and_backup_paths_rejected", !LaunchAdmission.isInstalledBundle(home.appendingPathComponent("build/SquirrelEnhancedDev.app"), home: home) &&
-      !LaunchAdmission.isInstalledBundle(home.appendingPathComponent("Library/Input Methods/SquirrelEnhancedDev.app-backup"), home: home))
+      !LaunchAdmission.isInstalledBundle(home.appendingPathComponent("Library/Input Methods/SquirrelEnhancedDev.app-backup"), home: home, systemApp: home.appendingPathComponent("test-system-app")))
 
     func refusal(_ name: String, bundle: URL? = nil, bundleID: String? = identifier,
       nameOfConnection: String? = connection, refuseLock: Bool = false, refuseServer: Bool = false) {
       let trace = Trace()
       do {
-        try LaunchAdmission.runService(bundle: bundle ?? app, home: home, identifier: bundleID, connectionName: nameOfConnection,
+        try LaunchAdmission.runService(bundle: bundle ?? app, home: home, identifier: bundleID, connectionName: nameOfConnection, systemApp: home.appendingPathComponent("test-system-app"),
           acquireLease: { _ in
             trace.events.append("lock")
             if refuseLock { throw LaunchAdmission.Failure.lockUnavailable }
@@ -91,7 +97,7 @@ enum NativeLaunchAdmissionProbe {
       let trace = Trace()
       weak var lease: Token?
       weak var server: Token?
-      try LaunchAdmission.runService(bundle: app, home: home, identifier: identifier, connectionName: connection,
+      try LaunchAdmission.runService(bundle: app, home: home, identifier: identifier, connectionName: connection, systemApp: home.appendingPathComponent("test-system-app"),
         acquireLease: { _ in let value = Token("lease", trace); lease = value; return value },
         makeServer: { name, id in
           check("factory_receives_exact_identity", name == connection && id == identifier)
@@ -114,7 +120,7 @@ enum NativeLaunchAdmissionProbe {
       child.standardOutput = FileHandle.nullDevice; child.standardError = FileHandle.nullDevice
       try child.run(); child.waitUntilExit(); return child.terminationStatus
     }
-    try LaunchAdmission.runService(bundle: app, home: home, identifier: identifier, connectionName: connection,
+    try LaunchAdmission.runService(bundle: app, home: home, identifier: identifier, connectionName: connection, systemApp: home.appendingPathComponent("test-system-app"),
       makeServer: { _, _ in Token("fake-server", Trace()) }, run: { _ in
         check("independent_process_cannot_take_live_lock", (try? childLockResult()) == 73)
         check("offline_build_cannot_take_live_service_lock", (try? childLockResult(build: true)) == 73)
@@ -148,7 +154,7 @@ enum NativeLaunchAdmissionProbe {
     let external = home.appendingPathComponent("build/SquirrelEnhancedDev.app", isDirectory: true)
     try files.createDirectory(at: external, withIntermediateDirectories: true)
     try files.createSymbolicLink(at: app, withDestinationURL: external)
-    check("installed_symlink_to_build_is_rejected", !LaunchAdmission.isInstalledBundle(app, home: home))
+    check("installed_symlink_to_build_is_rejected", !LaunchAdmission.isInstalledBundle(app, home: home, systemApp: home.appendingPathComponent("test-system-app")))
 
     let report: [String: Any] = ["status": checks.values.allSatisfy { $0 } ? "PASS" : "FAIL", "checks": checks,
       "real_imk_server_started": false, "real_rime_started": false, "real_appkit_started": false,

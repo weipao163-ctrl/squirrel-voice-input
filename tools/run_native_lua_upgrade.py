@@ -1,5 +1,6 @@
 """Execute the production Lua upgrader against disposable macOS file fixtures."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import plistlib
@@ -12,6 +13,7 @@ SWIFT = r'''
 import Foundation
 let base = URL(fileURLWithPath:CommandLine.arguments[1])
 let previous = try Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[2]))
+let backupSuffix = CommandLine.arguments[3]
 let bundled = Bundle.main.url(forResource:"letter_selection",withExtension:"lua")!
 let replacement = try Data(contentsOf:bundled)
 let fm = FileManager.default
@@ -36,7 +38,7 @@ test("known_previous_resource_backed_up_and_replaced") {
   let root=try fixture("known",previous)
   try EnhancementPatch.upgradeBundledLua(directory:root)
   try require(try Data(contentsOf:root.appendingPathComponent("lua/letter_selection.lua"))==replacement)
-  try require(try Data(contentsOf:root.appendingPathComponent("lua/letter_selection.lua.before-0.1.25"))==previous)
+  try require(try Data(contentsOf:root.appendingPathComponent("lua/letter_selection.lua." + backupSuffix))==previous)
 }
 test("repeated_upgrade_preserves_bytes_and_timestamp") {
   let root=try fixture("current",replacement),lua=root.appendingPathComponent("lua/letter_selection.lua")
@@ -51,7 +53,7 @@ test("user_modified_resource_untouched") {
 }
 test("conflicting_backup_preserves_current") {
   let root=try fixture("backup",previous)
-  try Data("KEEP".utf8).write(to:root.appendingPathComponent("lua/letter_selection.lua.before-0.1.25"))
+  try Data("KEEP".utf8).write(to:root.appendingPathComponent("lua/letter_selection.lua." + backupSuffix))
   try rejects(root)
   try require(try Data(contentsOf:root.appendingPathComponent("lua/letter_selection.lua"))==previous)
 }
@@ -67,13 +69,22 @@ test("oversize_resource_not_replaced") {
 }
 test("dangling_backup_link_preserves_current") {
   let root=try fixture("dangling-backup",previous)
-  try fm.createSymbolicLink(at:root.appendingPathComponent("lua/letter_selection.lua.before-0.1.25"),withDestinationURL:base.appendingPathComponent("nonexistent"))
+  try fm.createSymbolicLink(at:root.appendingPathComponent("lua/letter_selection.lua." + backupSuffix),withDestinationURL:base.appendingPathComponent("nonexistent"))
   try rejects(root); try require(try Data(contentsOf:root.appendingPathComponent("lua/letter_selection.lua"))==previous)
 }
 test("missing_user_resource_is_not_installed_or_enabled") {
   let root=try fixture("missing",nil)
   try EnhancementPatch.upgradeBundledLua(directory:root)
   try require(!fm.fileExists(atPath:root.appendingPathComponent("lua/letter_selection.lua").path))
+}
+test("different_historical_backup_is_preserved") {
+  let root=try fixture("historical-backup",previous)
+  let old=root.appendingPathComponent("lua/letter_selection.lua.before-unrelated-version")
+  let bytes=Data("older backup retained".utf8)
+  try bytes.write(to:old)
+  try EnhancementPatch.upgradeBundledLua(directory:root)
+  try require(try Data(contentsOf:old)==bytes)
+  try require(try Data(contentsOf:root.appendingPathComponent("lua/letter_selection.lua"))==replacement)
 }
 test("missing_bundled_resource_preserves_current") {
   let root=try fixture("missing-bundle",previous)
@@ -99,12 +110,18 @@ def main():
     (app/"Contents/Info.plist").write_bytes(plistlib.dumps({"CFBundleExecutable":"Probe","CFBundleIdentifier":"org.rime.fixture.LuaUpgrade","CFBundlePackageType":"APPL"}))
     (resources/"letter_selection.lua").write_bytes((ROOT/"lua/letter_selection.lua").read_bytes())
     source=stage/"main.swift";source.write_text(SWIFT)
-    library=Path.home()/"Library/Input Methods/SquirrelEnhancedDev.app/Contents/Frameworks/librime.1.dylib"
+    library=Path('/Library/Input Methods/SquirrelEnhancedDev.app/Contents/Frameworks/librime.1.dylib')
+    if not library.exists():
+        library=Path.home()/"Library/Input Methods/SquirrelEnhancedDev.app/Contents/Frameworks/librime.1.dylib"
     command=["xcrun","swiftc","-swift-version","5","-sdk",sdk,"-I",str(bins/"Modules"),"-I",str(project/"librime/src"),"-I",str(project/"librime/include"),"-import-objc-header",str(project/"sources/Squirrel-Bridging-Header.h"),str(source),str(project/"sources/EnhancementPatch.swift"),*[str(p) for p in (bins/"EnhancementCore.build").glob("*.swift.o")],str(library),"-o",str(exe)]
     command += ["-Xlinker","-rpath","-Xlinker",str(library.parent)]
     build=subprocess.run(command,capture_output=True,text=True)
     if build.returncode: raise RuntimeError(build.stderr)
-    run=subprocess.run([str(exe),str(stage),str(args.previous_lua.resolve())],capture_output=True,text=True)
+    suffix={
+      'e6eeb8def9e9c96f9ff143c46c5eacc942fef0c38dfae718da0ee10a0db4694c':'before-0.1.25',
+      'f08184f0e90c7e159529c0ec54b638561bf23ca3e400822d909108ab2e97d0af':'before-durable-learning-v1',
+    }[hashlib.sha256(args.previous_lua.read_bytes()).hexdigest()]
+    run=subprocess.run([str(exe),str(stage),str(args.previous_lua.resolve()),suffix],capture_output=True,text=True)
     if not run.stdout: raise RuntimeError(run.stderr)
     report=json.loads(run.stdout); report.update(kind="actual_production_upgrader_in_disposable_macOS_file_fixtures",user_data_modified=False)
     (ROOT/"evidence/native-lua-upgrade.json").write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n")
