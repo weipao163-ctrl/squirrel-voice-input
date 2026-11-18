@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>输入法焦点兼容回归</title>
+<style>body{font:20px system-ui;max-width:740px;margin:60px auto;padding:20px}label{display:block;margin:30px 0 12px}input{font:24px system-ui;padding:12px;width:90%}p{line-height:1.6;color:#444}</style>
+<h1>输入法焦点兼容回归</h1>
+<p>本页不联网、不提交、不保存输入内容。密码框仅输入测试文字 test123。</p>
+<label for="test-password">测试密码框（只输入 test123）</label>
+<input id="test-password" type="password" autocomplete="off" spellcheck="false">
+<label for="test-text">普通输入框</label>
+<input id="test-text" type="text" autocomplete="off" spellcheck="false">
+<p id="status" aria-live="polite">等待测试</p>
+<script>
+const status=document.getElementById('status');
+for(const input of document.querySelectorAll('input')){
+  input.addEventListener('focus',()=>{status.textContent=input.type==='password'?'密码框获得焦点':'普通输入框获得焦点'});
+  input.addEventListener('blur',()=>{status.textContent='输入框失去焦点'});
+}
+window.addEventListener('blur',()=>{status.textContent='浏览器窗口失去焦点'});
+</script></html>
