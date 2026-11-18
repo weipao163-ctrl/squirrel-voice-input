@@ -143,6 +143,8 @@ public struct VoiceSettings: Codable, Equatable {
   }
   public var enabled = false
   public var binding: TriggerBinding?
+  public var mouseHoldEnabled = false
+  public var mouseHoldSeconds: TimeInterval = MouseHoldTiming.defaultSeconds
   public var region: Region? = nil
   public var workspace = ""
   public var credentialReference: String?
@@ -157,7 +159,7 @@ public struct VoiceSettings: Codable, Equatable {
   public var previewAtCaret = false
   public init() {}
   private enum CodingKeys:String,CodingKey {
-    case model, nativePolish, doubao, enabled, binding, region, workspace, credentialReference, deviceUID
+    case model, nativePolish, doubao, enabled, binding, mouseHoldEnabled, mouseHoldSeconds, region, workspace, credentialReference, deviceUID
     case maximumSeconds, connectSeconds, taskStartSeconds, finalizeSeconds, queueSeconds, showPreview
     case previewTransparency, previewAtCaret
   }
@@ -169,6 +171,8 @@ public struct VoiceSettings: Codable, Equatable {
     doubao = try values.decodeIfPresent(DoubaoSettings.self,forKey:.doubao) ?? DoubaoSettings()
     enabled = try values.decodeIfPresent(Bool.self,forKey:.enabled) ?? false
     binding = try values.decodeIfPresent(TriggerBinding.self,forKey:.binding)
+    mouseHoldEnabled = try values.decodeIfPresent(Bool.self,forKey:.mouseHoldEnabled) ?? false
+    mouseHoldSeconds = try values.decodeIfPresent(TimeInterval.self,forKey:.mouseHoldSeconds) ?? MouseHoldTiming.defaultSeconds
     region = try values.decodeIfPresent(Region.self,forKey:.region)
     workspace = try values.decodeIfPresent(String.self,forKey:.workspace) ?? ""
     credentialReference = try values.decodeIfPresent(String.self,forKey:.credentialReference)
@@ -195,6 +199,9 @@ public struct VoiceSettings: Codable, Equatable {
     return URL(string: "wss://\(workspace).\(region.rawValue).maas.aliyuncs.com/api-ws/v1/inference")!
   }
   public func validate(requireReady: Bool = false) throws {
+    guard MouseHoldTiming.valid(mouseHoldSeconds) else {
+      throw SettingsError.invalid("左键长按启动时间须为 0.1～3.0 秒。")
+    }
     guard previewTransparency.isFinite, (0...0.7).contains(previewTransparency) else {
       throw SettingsError.invalid("浮窗透明度应为 0% 至 70%。")
     }
@@ -203,7 +210,7 @@ public struct VoiceSettings: Codable, Equatable {
           (1...10).contains(queueSeconds) else { throw SettingsError.invalid("时限或音频队列超出允许范围。") }
     if let binding { try binding.validate() }
     if enabled || requireReady {
-      guard binding != nil, activeCredentialReference != nil else { throw SettingsError.invalid("请先保存所选服务的密钥和按住键。") }
+      guard binding != nil || mouseHoldEnabled, activeCredentialReference != nil else { throw SettingsError.invalid("请先保存所选服务的密钥，并设置语音热键或开启左键长按。") }
       _ = try endpoint()
     } else if model.isDoubao || !workspace.isEmpty { _ = try endpoint() }
   }
