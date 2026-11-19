@@ -66,17 +66,26 @@ source "$script_directory/app-install-transaction.sh"
 run_input_method_registrar() {
   as_console_user /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister "$@"
 }
+verify_root_input_method() {
+  [[ ! -L "$1" && "$(/usr/bin/stat -f '%u' "$1")" == 0 ]] || return 2
+  local unsafe
+  unsafe="$(/usr/bin/find "$1" \( ! -user 0 -o \( ! -type l \( -perm -002 -o -perm -020 \) \) \) -print -quit)" || return $?
+  [[ -z "$unsafe" ]] || { echo '系统程序包含非 root 所有或可被其他用户写入的文件；拒绝提权执行。' >&2; return 2; }
+  /usr/bin/codesign --verify --deep --strict "$1"
+}
+exchange_input_method_target() {
+  [[ "$1" == "$source_app" && "$2" == "$target" ]] || return 2
+  verify_root_input_method "$1" || return $?
+  "$1/Contents/MacOS/SquirrelEnhancedDev" --exchange-installed-bundle "$2" "$3"
+}
 register_input_method_target() {
   # macOS 27 has a root-owned IntlDataCache in addition to each user's TIS
   # registration. User-only registration can leave the system menu/sandboxed
   # readers on old bundle metadata after an otherwise successful update.
   # The transaction has already protected and verified this exact system app.
   # Never run a user-owned retired copy as root or enable/select as root.
-  [[ "$1" == "$target" && ! -L "$1" && "$(/usr/bin/stat -f '%u' "$1")" == 0 ]] || return 2
-  local unsafe
-  unsafe="$(/usr/bin/find "$1" \( ! -user 0 -o \( ! -type l \( -perm -002 -o -perm -020 \) \) \) -print -quit)" || return $?
-  [[ -z "$unsafe" ]] || { echo '系统程序包含非 root 所有或可被其他用户写入的文件；拒绝提权执行。' >&2; return 2; }
-  /usr/bin/codesign --verify --deep --strict "$1" || return $?
+  [[ "$1" == "$target" ]] || return 2
+  verify_root_input_method "$1" || return $?
   "$1/Contents/MacOS/SquirrelEnhancedDev" --register-input-source || return $?
   as_console_user "$1/Contents/MacOS/SquirrelEnhancedDev" --register-input-source
 }
@@ -99,6 +108,6 @@ fi
 install_development_app "$source_app" "$target" "$backup_root"
 # The transaction's registration hook has completed both scopes, including on
 # an identical-package reinstall and on restoration of an old system bundle.
-as_console_user "$target/Contents/MacOS/SquirrelEnhancedDev" --enable-input-source org.rime.inputmethod.SquirrelEnhanced.Development.Hans
+as_console_user "$target/Contents/MacOS/SquirrelEnhancedDev" --enable-input-source
 as_console_user /usr/bin/open -g "$target"
 echo '已安装到系统输入法目录，用户词库、设置和钥匙串保留。'

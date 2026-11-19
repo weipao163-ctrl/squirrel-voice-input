@@ -9,6 +9,9 @@ run_input_method_registrar() {
 # The ordinary developer transaction retains its unprivileged behavior.
 register_input_method_target() { "$1/Contents/MacOS/SquirrelEnhancedDev" --register-input-source; }
 prepare_input_method_stage() { :; }
+exchange_input_method_target() {
+  "$1/Contents/MacOS/SquirrelEnhancedDev" --exchange-installed-bundle "$2" "$3"
+}
 
 unregister_input_method_path() {
   local path="$1" output status expected
@@ -52,7 +55,7 @@ install_development_app() (
   mkdir "$lock" 2>/dev/null || {
     echo "安装事务锁已存在；保留现场，不自动抢锁：$lock" >&2; exit 2;
   }
-  stage=''; backup=''; moved_old=0; installed_new=0
+  stage=''; backup=''; swap_started=0; installed_new=0
   operation="$(date +%Y%m%d-%H%M%S)-$$"
   # Recovery directories avoid the .app suffix; their nested Helper is also
   # unregistered. Restore by moving back to the exact installed .app path.
@@ -63,12 +66,30 @@ install_development_app() (
     rmdir "$lock"; echo '备份名称冲突，保留现场。' >&2; exit 2;
   }
   cleanup_install() {
-    local status=$?
+    local status=$? restored=0
     trap - EXIT INT TERM
+    # Also covers a signal delivered just after the kernel exchange returned.
+    if [[ "$swap_started" == 1 && "$installed_new" == 0 && -d "$backup" ]] &&
+       diff -qr "$source_app" "$target" >/dev/null 2>&1; then
+      installed_new=1; stage=''
+    fi
     if [[ "$status" != 0 ]]; then
       if [[ "$installed_new" == 1 && -d "$target" ]]; then
         if diff -qr "$source_app" "$target" >/dev/null 2>&1; then
-          if mv "$target" "$failed"; then
+          if [[ "$swap_started" == 1 && -d "$backup" ]]; then
+            if exchange_input_method_target "$source_app" "$target" "$backup"; then
+              restored=1
+              if mv "$backup" "$failed"; then
+                unregister_input_method_copy "$failed" ||
+                  echo "失败新包已保留，但系统注册清理失败：$failed" >&2
+              else
+                unregister_input_method_copy "$backup" || true
+                echo "旧包已恢复，失败新包仍保留在：$backup" >&2
+              fi
+            else
+              echo "无法交换恢复；新包仍在原路径，旧包备份：$backup" >&2
+            fi
+          elif mv "$target" "$failed"; then
             unregister_input_method_copy "$failed" ||
               echo "失败新包已保留，但系统注册清理失败：$failed" >&2
           else
@@ -92,12 +113,9 @@ install_development_app() (
       fi
     fi
     if [[ "$status" != 0 ]]; then
-      if [[ "$moved_old" == 1 && -d "$backup" && ! -e "$target" && ! -L "$target" ]]; then
-        mv "$backup" "$target" || echo "旧包恢复失败；可恢复备份：$backup" >&2
-        if [[ -d "$target" ]]; then
-          register_input_method_target "$target" ||
-            echo '旧包文件已恢复，但系统注册刷新失败；请重新安装或注销后登录。' >&2
-        fi
+      if [[ "$restored" == 1 ]]; then
+        register_input_method_target "$target" ||
+          echo '旧包文件已恢复，但系统注册刷新失败；请重新安装或注销后登录。' >&2
       fi
       echo "安装失败（退出码 ${status}）；恢复资料目录：$backup_root" >&2
     fi
@@ -126,12 +144,17 @@ install_development_app() (
   prepare_input_method_stage "$stage"
   codesign --verify --deep --strict "$stage"
   if [[ -d "$target" ]]; then
-    printf 'phase=moving-old\n' >> "$lock/transaction.txt"
-    moved_old=1; mv "$target" "$backup"
+    printf 'phase=preparing-exchange\n' >> "$lock/transaction.txt"
+    mv "$stage" "$backup"; stage="$backup"
+    printf 'phase=exchanging\n' >> "$lock/transaction.txt"
+    swap_started=1
+    exchange_input_method_target "$source_app" "$target" "$backup"
+    installed_new=1; stage=''
     unregister_input_method_copy "$backup"
+  else
+    printf 'phase=installing-new\n' >> "$lock/transaction.txt"
+    installed_new=1; mv "$stage" "$target"; stage=''
   fi
-  printf 'phase=installing-new\n' >> "$lock/transaction.txt"
-  installed_new=1; mv "$stage" "$target"; stage=''
   printf 'phase=registering\n' >> "$lock/transaction.txt"
   unregister_input_method_copy "$source_app"
   register_input_method_target "$target"
