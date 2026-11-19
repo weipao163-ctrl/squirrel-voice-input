@@ -20,6 +20,11 @@ enum LaunchAdmission {
       "--candidate-position-check", "--reload", "--input-source-status", "--register-input-source",
       "--install", "--build", "--sync", "--ascii", "--nascii", "--getascii", "--help"]
     if simple.contains(command) { return arguments.count == 1 ? .maintenance : .rejected }
+    if command == "--exchange-installed-bundle" {
+      return arguments.count == 3 && arguments.dropFirst().allSatisfy {
+        $0.hasPrefix("/") && !$0.contains("\n") && !$0.contains("\0")
+      } ? .maintenance : .rejected
+    }
     if command == "--quit" {
       if arguments.count == 1 { return .maintenance }
       return arguments.count == 3 && arguments[1] == "--installed-app-path" &&

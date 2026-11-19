@@ -159,6 +159,12 @@ struct SquirrelApp {
         case "--register-input-source", "--install":
           guard installer.register() == noErr else { exit(EXIT_FAILURE) }
           return true
+        case "--exchange-installed-bundle":
+          guard InputMethodLocation.exchangeInstalledBundle(target: args[2], backup: args[3], home: LaunchAdmission.homeDirectory) else {
+            fputs("无法原子交换输入法目录，保留现有安装。\n", stderr)
+            exit(EXIT_FAILURE)
+          }
+          return true
         case "--enable-input-source":
           if args.count > 2 {
             let modes = args[2...].map { SquirrelInstaller.InputMode(rawValue: $0) }.compactMap { $0 }

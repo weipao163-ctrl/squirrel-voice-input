@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Carbon
 import EnhancementCore
 import EnhancementIPC
@@ -37,6 +38,8 @@ final class EnhancementBridge: NSObject, AuthenticatedListenerDelegate {
   private var lifecycleObservers:[NSObjectProtocol] = []
   private var sourceObserver:NSObjectProtocol?
   weak var input:EnhancementInput?
+  private var mouseVoice: MouseVoiceTrigger?
+  private weak var mouseVoiceOwner: SquirrelInputController?
   var settings:Settings { configuration }
   var connected:Bool { connection != nil }
 
@@ -54,6 +57,46 @@ final class EnhancementBridge: NSObject, AuthenticatedListenerDelegate {
       forName:NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),object:nil,queue:.main
     ) { [weak self] _ in self?.input?.enhancementInvalidated() }
   }
+  // Own the press in the input-method process and bind it to a controller only
+  // once the clicked editor and its input session are ready.
+  func configureMouseVoice() {
+    mouseVoice?.interrupt()
+    guard settings.voice.enabled && settings.voice.mouseHoldEnabled else { mouseVoice = nil; return }
+    let holdSeconds = settings.voice.mouseHoldSeconds
+    if mouseVoice?.holdSeconds == holdSeconds, mouseVoice?.available == true { return }
+    mouseVoice = MouseVoiceTrigger(holdSeconds: holdSeconds, canArm: { [weak self] processID in
+      guard let self, self.connected, AXIsProcessTrusted(), !IsSecureEventInputEnabled(),
+            let target = NSRunningApplication(processIdentifier: processID),
+            !MouseVoicePolicy.excludes(bundle: target.bundleIdentifier),
+            SquirrelInstaller.currentInputSourceID()?.hasPrefix("org.rime.inputmethod.SquirrelEnhanced.Development") == true else { return false }
+      let controller = self.input as? SquirrelInputController
+      return controller?.allowsMouseVoicePress(for: target.bundleIdentifier) ?? true
+    }, canStart: { [weak self] in
+      (self?.input as? SquirrelInputController)?.enhancementCanStartMouseVoice() == true
+    }, begin: { [weak self] uptime, anchor in
+      guard let self, let controller = self.input as? SquirrelInputController,
+            controller.enhancementCanStartMouseVoice() else { return false }
+      self.mouseVoiceOwner = controller
+      controller.enhancementBeginMouseVoice(at: uptime, anchor: anchor)
+      return true
+    }, stop: { [weak self] uptime in
+      let owner = self?.mouseVoiceOwner
+      self?.mouseVoiceOwner = nil
+      owner?.enhancementReleaseVoice(at: uptime)
+    }, cancel: { [weak self] in
+      let owner = self?.mouseVoiceOwner
+      self?.mouseVoiceOwner = nil
+      owner?.enhancementInvalidated()
+    }, record: { outcome in CandidatePositionStatistics.shared.increment("mouse_voice_" + outcome) })
+    if mouseVoice?.available == false {
+      reply("左键长按监听未就绪；请检查输入法焦点检测权限。键盘热键仍可使用。")
+    }
+  }
+  func cancelMouseVoice(ownedBy controller: SquirrelInputController) {
+    guard mouseVoiceOwner === controller else { return }
+    mouseVoiceOwner = nil
+    mouseVoice?.interrupt()
+  }
   private func withLink<T>(_ body:(inout HelperLinkState)->T) -> T {
     linkLock.lock(); defer { linkLock.unlock() }; return body(&link)
   }
@@ -62,6 +105,7 @@ final class EnhancementBridge: NSObject, AuthenticatedListenerDelegate {
     linkLock.lock(); expectedPID=nil; link.ownerEnded(); linkLock.unlock()
     let old=connection; connection=nil; connectionID=nil; old?.invalidate()
     listener?.invalidate();listener=nil
+    mouseVoice?.interrupt()
     EnhancementDeployment.shared.helperDisconnected()
   }
   private func connectionEnded(_ id:UUID) {
@@ -69,6 +113,7 @@ final class EnhancementBridge: NSObject, AuthenticatedListenerDelegate {
     // A stale handler cannot clear a replacement or invalidate its input session.
     guard connectionID == id else { return }
     let old=connection; connection=nil; connectionID=nil; old?.invalidate()
+    mouseVoice?.interrupt()
     EnhancementDeployment.shared.helperDisconnected()
   }
   @discardableResult func launchIfNeeded() -> Bool {
@@ -134,6 +179,7 @@ final class EnhancementBridge: NSObject, AuthenticatedListenerDelegate {
     } as? HelperCommands
   }
   func openSettings() {
+    mouseVoice?.interrupt()
     input?.enhancementInvalidated()
     if trust == nil, let url = Bundle.main.resourceURL?.appendingPathComponent("SquirrelVoiceHelper.app") {
       let config = NSWorkspace.OpenConfiguration(); config.arguments = ["--settings"]
@@ -150,7 +196,9 @@ final class EnhancementBridge: NSObject, AuthenticatedListenerDelegate {
     DispatchQueue.main.async {
       // Check origin again after queueing, then verify the persistent authority.
       guard self.withLink({ $0.accepts(id) }), let disk = try? self.store.load(), disk == value else { return }
-      self.configuration = value; self.input?.enhancementConfigurationChanged(value)
+      self.configuration = value
+      self.configureMouseVoice()
+      self.input?.enhancementConfigurationChanged(value)
       let receipt = SettingsReceipt(revision:value.revision,message:"输入法已接收并缓存配置；开关按安全边界应用，语音从下一完整按键周期生效。默认拼音已内置字母处理器；其他方案或页大小结构改动才需在 GUI 确认部署。")
       if let data = try? Wire.encode(receipt) { self.helper?.settingsApplied(data) }
     }

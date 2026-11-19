@@ -33,4 +33,26 @@ enum InputMethodLocation {
     return bundle.standardizedFileURL.path == expected.standardizedFileURL.path &&
       bundle.resolvingSymlinksInPath().standardizedFileURL.path == expected.standardizedFileURL.path
   }
+
+  // Keep the canonical application path present throughout both upgrade and
+  // rollback. The exchanged directory is retained by the installer.
+  static func exchangeInstalledBundle(target: String, backup: String, home: URL) -> Bool {
+    let system = target == systemApp.path
+    let accountHome = home.resolvingSymlinksInPath().standardizedFileURL
+    guard system ? getuid() == 0 : target == userApp(home: accountHome).path else { return false }
+    let support = (system ? URL(fileURLWithPath: "/", isDirectory: true) : accountHome)
+      .appendingPathComponent("Library/Application Support/SquirrelEnhancedDev/install-backups", isDirectory: true)
+    let backupURL = URL(fileURLWithPath: backup, isDirectory: true)
+    let backupName = backupURL.lastPathComponent
+    guard backup == support.appendingPathComponent(backupName).path,
+          backupName.range(of: #"^app-[0-9]{8}-[0-9]{6}-[0-9]+\.app-backup$"#, options: .regularExpression) != nil else { return false }
+    for path in [target, backup] {
+      let url = URL(fileURLWithPath: path, isDirectory: true)
+      var info = stat()
+      guard url.resolvingSymlinksInPath().path == path, lstat(path, &info) == 0,
+            info.st_uid == getuid(), info.st_mode & S_IFMT == S_IFDIR,
+            info.st_mode & 0o022 == 0 else { return false }
+    }
+    return renamex_np(target, backup, UInt32(RENAME_SWAP)) == 0
+  }
 }

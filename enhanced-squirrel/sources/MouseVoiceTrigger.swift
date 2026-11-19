@@ -7,6 +7,12 @@ protocol MouseVoiceAnchorChecking: AnyObject {
   func matches(at point: NSPoint) -> Bool
 }
 
+enum MouseVoiceHit<Element> {
+  case editor(Element)
+  case unresolved
+  case blocked
+}
+
 // Mouse gestures need stronger hit evidence than an explicit keyboard hotkey:
 // a stale IMK client must never make a held button or read-only label record.
 final class MouseVoiceAnchor: MouseVoiceAnchorChecking {
@@ -16,94 +22,108 @@ final class MouseVoiceAnchor: MouseVoiceAnchorChecking {
   private init(element: AXUIElement, processID: Int32, bundle: String) {
     self.element = element; self.processID = processID; self.bundle = bundle
   }
-  static func capture(at point: NSPoint) -> MouseVoiceAnchor? {
+  static func capture(at point: NSPoint, in processID: Int32) -> MouseVoiceHit<MouseVoiceAnchorChecking> {
     guard AXIsProcessTrusted(), !IsSecureEventInputEnabled(),
-          let front = NSWorkspace.shared.frontmostApplication,
-          let bundle = front.bundleIdentifier, !MouseVoicePolicy.excludes(bundle: bundle),
-          let top = NSScreen.screens.first?.frame.maxY,
-          point.x.isFinite, point.y.isFinite else { return nil }
-    let app = AXUIElementCreateApplication(front.processIdentifier)
+          let application = NSRunningApplication(processIdentifier: processID),
+          let bundle = application.bundleIdentifier, !MouseVoicePolicy.excludes(bundle: bundle) else { return .blocked }
+    let app = AXUIElementCreateApplication(processID)
     AXUIElementSetMessagingTimeout(app, 0.08)
-    func attribute(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
-      var value: CFTypeRef?
-      return AXUIElementCopyAttributeValue(element, key as CFString, &value) == .success ? value : nil
+    switch editableHit(in: app, at: point) {
+    case .editor(let element): return .editor(MouseVoiceAnchor(element: element, processID: processID, bundle: bundle))
+    case .unresolved: return .unresolved
+    case .blocked: return .blocked
     }
-    guard let raw = attribute(app, kAXFocusedUIElementAttribute),
-          CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
-    let focused = unsafeBitCast(raw, to: AXUIElement.self)
-    AXUIElementSetMessagingTimeout(focused, 0.08)
-    let role = attribute(focused, kAXRoleAttribute) as? String
-    guard ["AXTextField", "AXTextArea", "AXComboBox"].contains(role ?? ""),
-          attribute(focused, kAXSubroleAttribute) as? String != "AXSecureTextField",
-          attribute(focused, kAXEnabledAttribute) as? Bool != false else { return nil }
-    var writable = DarwinBoolean(false)
-    let canSetValue = AXUIElementIsAttributeSettable(focused, kAXValueAttribute as CFString, &writable) == .success && writable.boolValue
-    guard MouseVoicePolicy.allowsFocusedElement(role: role,
-      subrole: attribute(focused, kAXSubroleAttribute) as? String,
-      enabled: attribute(focused, kAXEnabledAttribute) as? Bool,
-      writable: canSetValue || attribute(focused, "AXEditable") as? Bool == true) else { return nil }
+  }
+  private static func attribute(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
+    var value: CFTypeRef?
+    return AXUIElementCopyAttributeValue(element, key as CFString, &value) == .success ? value : nil
+  }
+  private static func editableHit(in app: AXUIElement, at point: NSPoint) -> MouseVoiceHit<AXUIElement> {
+    guard let top = NSScreen.screens.first?.frame.maxY, point.x.isFinite, point.y.isFinite else { return .blocked }
     var hit: AXUIElement?
     guard AXUIElementCopyElementAtPosition(app, Float(point.x), Float(top - point.y), &hit) == .success,
-          var current = hit else { return nil }
-    // Text can be a child of the editable element; embedded buttons are not
-    // recording targets, even when the text field remains keyboard-focused.
+          var current = hit else { return .unresolved }
+    // Text can be a child of the editor. Never treat an embedded button,
+    // link or secure field as part of an editable hit.
     for _ in 0..<8 {
       AXUIElementSetMessagingTimeout(current, 0.08)
-      if CFEqual(current, focused) {
-        return MouseVoiceAnchor(element: focused, processID: front.processIdentifier, bundle: bundle)
+      guard let role = attribute(current, kAXRoleAttribute) as? String else { return .unresolved }
+      guard !["AXButton", "AXPopUpButton", "AXMenuItem", "AXLink", "AXScrollBar", "AXSecureTextField"].contains(role) else { return .blocked }
+      if ["AXTextField", "AXTextArea", "AXComboBox"].contains(role) {
+        let subrole = attribute(current, kAXSubroleAttribute) as? String
+        let enabled = attribute(current, kAXEnabledAttribute) as? Bool
+        var writable = DarwinBoolean(false)
+        let canSetValue = AXUIElementIsAttributeSettable(current, kAXValueAttribute as CFString, &writable) == .success && writable.boolValue
+        return MouseVoicePolicy.allowsFocusedElement(role: role, subrole: subrole, enabled: enabled,
+          writable: canSetValue || attribute(current, "AXEditable") as? Bool == true) ? .editor(current) : .blocked
       }
-      let hitRole = attribute(current, kAXRoleAttribute) as? String
-      guard !["AXButton", "AXPopUpButton", "AXMenuItem", "AXLink", "AXScrollBar"].contains(hitRole ?? ""),
-            let parent = attribute(current, kAXParentAttribute),
-            CFGetTypeID(parent) == AXUIElementGetTypeID() else { return nil }
+      guard let parent = attribute(current, kAXParentAttribute), CFGetTypeID(parent) == AXUIElementGetTypeID() else { return .unresolved }
       current = unsafeBitCast(parent, to: AXUIElement.self)
     }
-    return nil
+    return .unresolved
   }
   func matches(at point: NSPoint) -> Bool {
-    guard let current = Self.capture(at: point) else { return false }
-    return processID == current.processID && bundle == current.bundle && CFEqual(element, current.element)
+    guard AXIsProcessTrusted(), !IsSecureEventInputEnabled(),
+          let front = NSWorkspace.shared.frontmostApplication,
+          front.processIdentifier == processID, front.bundleIdentifier == bundle else { return false }
+    let app = AXUIElementCreateApplication(processID)
+    AXUIElementSetMessagingTimeout(app, 0.08)
+    guard let raw = Self.attribute(app, kAXFocusedUIElementAttribute), CFGetTypeID(raw) == AXUIElementGetTypeID(),
+          CFEqual(element, raw), case .editor(let hit) = Self.editableHit(in: app, at: point),
+          CFEqual(element, hit) else { return false }
+    return true
   }
 }
 
 // Passive observation only: never swallow/synthesize a mouse event or change
-// focus. One instance belongs to the currently active input controller.
+// focus. One listener survives handoff between input sessions.
 final class MouseVoiceTrigger {
+  private static let hitRetryInterval: TimeInterval = 0.04
+  private static let hitGrace: TimeInterval = 0.15
   private var cycle: MouseHoldCycle
   let holdSeconds: TimeInterval
   private var epoch = UUID()
   private var anchor: MouseVoiceAnchorChecking?
   private var origin = NSPoint.zero
+  private var targetPID: Int32?
   private var recognizeAt: TimeInterval = 0
   private var timer: Timer?
+  private var anchorTimer: Timer?
   private var buttonTimer: Timer?
   private var monitor: Any?
   private var observers: [NSObjectProtocol] = []
   private var sourceObserver: NSObjectProtocol?
+  private let canArm: (Int32) -> Bool
   private let canStart: () -> Bool
-  private let begin: (TimeInterval) -> Bool
+  private let begin: (TimeInterval, MouseVoiceAnchorChecking) -> Bool
   private let stop: (TimeInterval) -> Void
   private let cancel: () -> Void
-  private let capture: (NSPoint) -> MouseVoiceAnchorChecking?
+  private let capture: (NSPoint, Int32) -> MouseVoiceHit<MouseVoiceAnchorChecking>
+  private let record: (String) -> Void
   private let clock: () -> TimeInterval
   private let leftPressed: () -> Bool
   private let location: () -> NSPoint
+  private let foregroundProcess: () -> Int32?
   private let monitorEvents: Bool
   private let automaticTimers: Bool
   var available: Bool { !monitorEvents || monitor != nil }
 
   init(holdSeconds: TimeInterval = MouseHoldTiming.defaultSeconds,
-       canStart: @escaping () -> Bool, begin: @escaping (TimeInterval) -> Bool,
+       canArm: @escaping (Int32) -> Bool, canStart: @escaping () -> Bool,
+       begin: @escaping (TimeInterval, MouseVoiceAnchorChecking) -> Bool,
        stop: @escaping (TimeInterval) -> Void, cancel: @escaping () -> Void,
-       capture: @escaping (NSPoint) -> MouseVoiceAnchorChecking? = { MouseVoiceAnchor.capture(at: $0) },
+       capture: @escaping (NSPoint, Int32) -> MouseVoiceHit<MouseVoiceAnchorChecking> = { MouseVoiceAnchor.capture(at: $0, in: $1) },
+       record: @escaping (String) -> Void = { _ in },
        clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
        leftPressed: @escaping () -> Bool = { NSEvent.pressedMouseButtons & 1 != 0 },
-       location: @escaping () -> NSPoint = { NSEvent.mouseLocation }, monitorEvents: Bool = true,
+       location: @escaping () -> NSPoint = { NSEvent.mouseLocation },
+       foregroundProcess: @escaping () -> Int32? = { NSWorkspace.shared.frontmostApplication?.processIdentifier },
+       monitorEvents: Bool = true,
        automaticTimers: Bool? = nil) {
     self.holdSeconds = holdSeconds; self.cycle = MouseHoldCycle(holdSeconds: holdSeconds)
-    self.canStart = canStart; self.begin = begin; self.stop = stop; self.cancel = cancel
-    self.capture = capture; self.clock = clock; self.leftPressed = leftPressed
-    self.location = location; self.monitorEvents = monitorEvents
+    self.canArm = canArm; self.canStart = canStart; self.begin = begin; self.stop = stop; self.cancel = cancel
+    self.capture = capture; self.record = record; self.clock = clock; self.leftPressed = leftPressed
+    self.location = location; self.foregroundProcess = foregroundProcess; self.monitorEvents = monitorEvents
     self.automaticTimers = automaticTimers ?? monitorEvents
     guard monitorEvents else { return }
     monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged,
@@ -111,8 +131,11 @@ final class MouseVoiceTrigger {
       self?.handle(event)
     }
     let center = NSWorkspace.shared.notificationCenter
-    for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didDeactivateApplicationNotification,
-        NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.activeSpaceDidChangeNotification] {
+    observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+      let application = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+      self?.applicationActivated(processID: application?.processIdentifier)
+    })
+    for name in [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.activeSpaceDidChangeNotification] {
       observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.interrupt() })
     }
     sourceObserver = DistributedNotificationCenter.default().addObserver(
@@ -123,18 +146,24 @@ final class MouseVoiceTrigger {
     guard let point = event.cgEvent?.location, let top = NSScreen.screens.first?.frame.maxY else { return location() }
     return NSPoint(x: point.x, y: top - point.y)
   }
-  private func handle(_ event: NSEvent) {
+  func handle(_ event: NSEvent) {
     switch event.type {
     case .leftMouseDown:
-      press(at: event.timestamp, point: eventPoint(event), singleClick: event.clickCount == 1,
+      // The global monitor's event copy can name the observer as its target.
+      // Bind to the foreground process and cancel if that application changes.
+      guard let processID = foregroundProcess() else { return }
+      press(at: event.timestamp, point: eventPoint(event), processID: processID, singleClick: event.clickCount == 1,
             modified: !event.modifierFlags.intersection([.shift, .control, .option, .command]).isEmpty)
     case .leftMouseUp: release(at: event.timestamp)
     case .leftMouseDragged: moved(to: eventPoint(event))
     default: interrupt()
     }
   }
-  func press(at now: TimeInterval, point: NSPoint, singleClick: Bool = true, modified: Bool = false) {
-    let armed = cycle.press(at: now, x: point.x, y: point.y, eligible: canStart(), singleClick: singleClick, modified: modified)
+  func press(at now: TimeInterval, point: NSPoint, processID: Int32, singleClick: Bool = true, modified: Bool = false) {
+    // A newer down invalidates a prior mouse cycle even if its up was missed.
+    guard !cycle.held else { interrupt(); return }
+    let eligible = singleClick && !modified && canArm(processID)
+    let armed = cycle.press(at: now, x: point.x, y: point.y, eligible: eligible, singleClick: singleClick, modified: modified)
     if automaticTimers, cycle.held, buttonTimer == nil {
       // Global AppKit monitors exclude events delivered to this process. Check
       // the physical release only WHILE held, so an up over our own panel or a
@@ -143,27 +172,39 @@ final class MouseVoiceTrigger {
       buttonTimer = watcher; RunLoop.main.add(watcher, forMode: .common)
     }
     guard armed else { return }
-    epoch = UUID(); let token = epoch; origin = point; recognizeAt = now + holdSeconds
+    record("armed")
+    epoch = UUID(); let token = epoch; origin = point; targetPID = processID; recognizeAt = now + holdSeconds
     guard automaticTimers else { return }
-    // Let the application's ordinary click place the caret before AX queries.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+    // Bind the editor under the down event before the threshold. Its keyboard
+    // focus and IMK session may finish activating later during the same hold.
+    let captureTimer = Timer(timeInterval: 0.03, repeats: false) { [weak self] _ in
       guard let self, self.epoch == token else { return }; self.capturePendingAnchor()
     }
-    scheduleDeadline(token)
+    anchorTimer = captureTimer; RunLoop.main.add(captureTimer, forMode: .common)
+    scheduleDeadline(token, at: recognizeAt)
   }
-  private func scheduleDeadline(_ token: UUID) {
-    let timer = Timer(timeInterval: max(0.001, recognizeAt - clock()), repeats: false) { [weak self] _ in
+  private func scheduleDeadline(_ token: UUID, at uptime: TimeInterval) {
+    let timer = Timer(timeInterval: max(0.001, uptime - clock()), repeats: false) { [weak self] _ in
       guard let self, self.epoch == token else { return }; self.deadline()
     }
     self.timer = timer; RunLoop.main.add(timer, forMode: .common)
   }
   func capturePendingAnchor() {
-    guard cycle.pending, leftPressed(), canStart() else { interrupt(); return }
+    anchorTimer?.invalidate(); anchorTimer = nil
+    guard cycle.pending, anchor == nil, leftPressed(), let targetPID,
+          !monitorEvents || foregroundProcess() == targetPID else { return }
     let token = epoch
-    let result = capture(origin)
-    guard epoch == token else { return }
-    guard cycle.pending, leftPressed(), canStart(), let result else { interrupt(); return }
-    anchor = result
+    let result = capture(origin, targetPID)
+    guard epoch == token, cycle.pending, leftPressed() else { return }
+    switch result {
+    case .editor(let editor): anchor = editor
+    case .unresolved: break // The clicked editor can appear only after the host processes the down event.
+    case .blocked: record("hit_blocked"); interrupt()
+    }
+  }
+  func applicationActivated(processID: Int32?) {
+    guard cycle.pending || cycle.recording else { return }
+    if processID == nil || processID != targetPID { interrupt() }
   }
   func moved(to point: NSPoint) {
     if cycle.moved(x: point.x, y: point.y) == .cancel { cancel() }
@@ -179,25 +220,56 @@ final class MouseVoiceTrigger {
     let token = epoch, point = location()
     moved(to: point)
     guard cycle.pending else { return }
-    let eligible = canStart() && leftPressed() && anchor?.matches(at: point) == true
-    guard epoch == token else { return }
-    if cycle.deadline(at: clock(), leftPressed: leftPressed(), eligible: eligible && canStart()) == .start {
-      anchor = nil
-      if !begin(clock()) { _ = cycle.interrupt() }
-    } else if cycle.pending, automaticTimers {
-      scheduleDeadline(token) // An early timer cannot silently lose the hold.
+    if clock() < recognizeAt {
+      if automaticTimers { scheduleDeadline(token, at: recognizeAt) }
+      return
     }
+    guard clock() <= recognizeAt + MouseHoldCycle.maximumDelay, leftPressed() else { interrupt(); return }
+    if anchor == nil {
+      // Retry the original down coordinates and process, not the focused
+      // element alone. Never replace an editor already pinned by the first hit.
+      let limit = recognizeAt + Self.hitGrace
+      if clock() <= limit { capturePendingAnchor() }
+      guard epoch == token, cycle.pending else { return }
+      if anchor == nil {
+        if clock() < limit, leftPressed() {
+          if automaticTimers { scheduleDeadline(token, at: min(limit, clock() + Self.hitRetryInterval)) }
+        } else { record("hit_unavailable"); interrupt() }
+        return
+      }
+      guard clock() <= limit else { record("hit_unavailable"); interrupt(); return }
+      record("hit_recovered")
+    }
+    moved(to: location())
+    guard cycle.pending, let anchor else { return }
+    let matches = anchor.matches(at: location())
+    guard epoch == token, cycle.pending else { return }
+    let eligible = matches && canStart()
+    guard epoch == token, cycle.pending else { return }
+    if cycle.deadline(at: clock(), leftPressed: leftPressed(), eligible: eligible) == .start {
+      if begin(clock(), anchor) { record("reserved") }
+      else if epoch == token { _ = cycle.interrupt() }
+    } else {
+      record(matches ? "session_unavailable" : "focus_changed")
+    }
+    if epoch == token { self.anchor = nil }
+  }
+  private func clearPending() {
+    epoch = UUID(); timer?.invalidate(); timer = nil
+    anchorTimer?.invalidate(); anchorTimer = nil
+    anchor = nil; targetPID = nil
   }
   func release(at now: TimeInterval) {
-    epoch = UUID(); timer?.invalidate(); timer = nil; anchor = nil
+    clearPending()
     buttonTimer?.invalidate(); buttonTimer = nil
     if cycle.release() == .stop { stop(now) }
   }
   func interrupt() {
-    epoch = UUID(); timer?.invalidate(); timer = nil; anchor = nil
+    clearPending()
     if cycle.interrupt() == .cancel { cancel() }
   }
   deinit {
+    anchorTimer?.invalidate()
     timer?.invalidate()
     buttonTimer?.invalidate()
     if let monitor { NSEvent.removeMonitor(monitor) }

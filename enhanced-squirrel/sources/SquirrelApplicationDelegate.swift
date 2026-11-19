@@ -62,6 +62,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, SPUSta
     panel = SquirrelPanel(position: .zero)
     refreshStatusItem()
     addObservers()
+    EnhancementBridge.shared.configureMouseVoice()
   }
 
   func applicationWillTerminate(_ notification: Notification) {
