@@ -61,6 +61,28 @@ enum NativeLaunchAdmissionProbe {
     check("exact_installed_path_accepted", LaunchAdmission.isInstalledBundle(app, home: home, systemApp: home.appendingPathComponent("test-system-app")))
     let user = InputMethodLocation.userApp(home: home)
     let system = home.appendingPathComponent("SystemLibrary/Input Methods/SquirrelEnhancedDev.app")
+    let exchange = "--exchange-installed-bundle"
+    let staged = home.resolvingSymlinksInPath().appendingPathComponent(
+      "Library/Application Support/SquirrelEnhancedDev/install-backups/app-20261119-200001-123.app-backup")
+    check("exchange_requires_two_absolute_paths", LaunchAdmission.action(arguments: [exchange, app.path, staged.path]) == .maintenance &&
+      LaunchAdmission.action(arguments: [exchange, app.path]) == .rejected &&
+      LaunchAdmission.action(arguments: [exchange, app.path, "relative"]) == .rejected)
+    try files.createDirectory(at: app, withIntermediateDirectories: true)
+    try files.createDirectory(at: staged, withIntermediateDirectories: true)
+    let oldMark = app.appendingPathComponent("old")
+    let newMark = staged.appendingPathComponent("new")
+    try Data().write(to: oldMark); try Data().write(to: newMark)
+    let unrelated = staged.deletingLastPathComponent().appendingPathComponent("different.app-backup")
+    try files.createSymbolicLink(at: unrelated, withDestinationURL: staged)
+    check("exchange_rejects_unrelated_destinations", !InputMethodLocation.exchangeInstalledBundle(
+      target: app.path, backup: unrelated.path, home: home))
+    check("installed_bundle_and_backup_exchange_on_real_filesystem",
+      InputMethodLocation.exchangeInstalledBundle(target: app.path, backup: staged.path, home: home) &&
+      files.fileExists(atPath: app.appendingPathComponent("new").path) &&
+      files.fileExists(atPath: staged.appendingPathComponent("old").path))
+    check("rollback_exchanges_original_bundle_back", InputMethodLocation.exchangeInstalledBundle(
+      target: app.path, backup: staged.path, home: home) && files.fileExists(atPath: oldMark.path) && files.fileExists(atPath: newMark.path))
+    try files.removeItem(at: app)
     check("protected_system_install_is_canonical", InputMethodLocation.matches(system, user: user, system: system, systemTrusted: true))
     check("user_copy_cannot_compete_with_system_install", !InputMethodLocation.matches(user, user: user, system: system, systemTrusted: true))
     check("untrusted_system_path_is_rejected", !InputMethodLocation.matches(system, user: user, system: system, systemTrusted: false))

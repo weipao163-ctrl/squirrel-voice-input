@@ -25,6 +25,8 @@ final class EnhancementBridge {
   var connected: Bool { false }
   var helper: HelperCommands? { nil }
   @discardableResult func launchIfNeeded() -> Bool { false }
+  func configureMouseVoice() {}
+  func cancelMouseVoice(ownedBy controller: SquirrelInputController) {}
   func openSettings() {}
   func reply(_ value: String) {}
 }
