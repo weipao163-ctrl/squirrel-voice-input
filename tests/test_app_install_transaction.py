@@ -108,6 +108,13 @@ mv() {
   command mv "$@"
 }
 source "$1"
+exchange_input_method_target() {
+  printf 'exchange:%s:%s\n' "$2" "$3" >> "$COMMAND_LOG"
+  if [[ "${FAIL_EXCHANGE:-0}" == 1 ]]; then return 41; fi
+  command mv "$2" "$3.test-swap"
+  command mv "$3" "$2"
+  command mv "$3.test-swap" "$3"
+}
 run_input_method_registrar() {
   [[ "$1" == -u ]] || return 99
   printf 'unregister:%s\\n' "$2" >> "$COMMAND_LOG"
@@ -117,6 +124,7 @@ run_input_method_registrar() {
   elif [[ "$2" == "$FIXTURE_BACKUPS/failed-"* || "$2" == "$FIXTURE_BACKUPS/staged-"* ]]; then
     error="${RECOVERY_REGISTRAR_ERROR:-}"; status="${RECOVERY_REGISTRAR_STATUS:-1}"
   elif [[ "$2" == "$FIXTURE_BACKUPS/app-"* ]]; then
+    [[ -d "$FIXTURE_TARGET" ]] || return 42
     error="${BACKUP_REGISTRAR_ERROR:-}"; status="${BACKUP_REGISTRAR_STATUS:-1}"
   fi
   if [[ -n "$error" ]]; then
@@ -129,6 +137,7 @@ run_input_method_registrar() {
 if [[ "${COLLIDE_STAGE:-0}" == 1 ]]; then mkdir -p "$3.new.$$"; printf KEEP > "$3.new.$$/marker"; fi
 install_development_app "$2" "$3" "$4"
 '''
+        env['FIXTURE_TARGET'] = bash_path(self.target)
         argv = [self.bash, '--noprofile', '--norc', '-c', command, 'fixture',
                 bash_path(SCRIPT), bash_path(self.source), bash_path(self.target), bash_path(self.backups)]
         run = subprocess.run(argv, env=env, capture_output=True, encoding='utf-8', errors='strict', timeout=30)
@@ -238,13 +247,20 @@ install_development_app "$2" "$3" "$4"
     def test_failed_new_move_does_not_unregister_or_overwrite_target(self):
         old = self.old_app(); self.helper(self.source)
         run = self.run_transaction(23, REGISTER_NEW_STATUS=23, FAIL_RECOVERY_MOVE_KIND='failed')
-        self.assertEqual(snapshot(self.target), snapshot(self.source))
-        self.assertEqual(snapshot(next(self.backups.glob('app-*.app-backup'))), old)
+        self.assertEqual(snapshot(self.target), old)
+        self.assertEqual(snapshot(next(self.backups.glob('app-*.app-backup'))), snapshot(self.source))
         self.assertEqual(list(self.backups.glob('failed-*.app-backup')), [])
-        self.assertEqual(self.calls.read_text(), 'register\n')
+        self.assertEqual(self.calls.read_text(), 'register\nregister\n')
         self.assertNotIn('unregister:' + str(self.target) + '\n', self.commands.read_text())
         self.assertNotIn('unregister:' + str(self.target/'Contents/Resources/SquirrelVoiceHelper.app'), self.commands.read_text())
-        self.assertIn('新包保留在目标位置；移动失败', run.stderr)
+        self.assertIn('旧包已恢复，失败新包仍保留在', run.stderr)
+
+    def test_failed_exchange_keeps_canonical_old_bundle_and_preserves_staged_copy(self):
+        old = self.old_app()
+        self.run_transaction(41, FAIL_EXCHANGE=1)
+        self.assertEqual(snapshot(self.target), old)
+        self.assertEqual(snapshot(next(self.backups.glob('staged-*.app-backup'))), snapshot(self.source))
+        self.assertFalse(self.calls.exists())
 
     def test_signature_and_partial_copy_failure_preserve_existing_target(self):
         self.helper(self.source)
@@ -271,13 +287,13 @@ install_development_app "$2" "$3" "$4"
         self.assertIn('failed to scan ' + str(staged) + ': -10810', run.stderr)
         self.assertIn('未完成 staging 已保留，但系统注册清理失败', run.stderr)
 
-    def test_staging_cleanup_precedes_old_bundle_registration_after_backup_error(self):
+    def test_failed_bundle_cleanup_precedes_old_bundle_registration_after_backup_error(self):
         self.helper(self.source); self.old_app(); self.helper(self.target)
         old = snapshot(self.target)
         self.run_transaction(37, BACKUP_REGISTRAR_ERROR=-10810, BACKUP_REGISTRAR_STATUS=37)
         self.assertEqual(snapshot(self.target), old)
-        staged = next(self.backups.glob('staged-*.app-backup'))
-        cleanup_index = self.assert_copy_unregistered(staged)
+        failed = next(self.backups.glob('failed-*.app-backup'))
+        cleanup_index = self.assert_copy_unregistered(failed)
         calls = self.commands.read_text().splitlines()
         self.assertLess(cleanup_index, calls.index('register:old:' + str(self.target/'Contents/MacOS/SquirrelEnhancedDev')))
         self.assertEqual(self.calls.read_text(), 'register\n')

@@ -43,7 +43,7 @@ class SystemInstallTests(unittest.TestCase):
         self.executable('open', '#!/bin/bash\nprintf "open:%s\\n" "$2" >> "$CALLS"\n')
         self.executable('session', '#!/bin/bash\nshift\nexport REGISTRATION_SCOPE=user\n"$@"\n')
         self.executable('stat', '#!/bin/bash\nif [[ $3 == "$FIXTURE_HOME" ]]; then echo '+str(os.getuid())+'; else echo 0; fi\n')
-        self.executable('find', '#!/bin/bash\nif [[ ${UNSAFE_SYSTEM_TREE:-0} == 1 && $(cat "$1/version") == new ]]; then echo "$1/unsafe"; fi\n')
+        self.executable('find', '#!/bin/bash\nif [[ ${UNSAFE_SYSTEM_TREE:-0} == 1 && "$1" == "$SYSTEM_TARGET" && $(cat "$1/version") == new ]]; then echo "$1/unsafe"; fi\n')
         self.executable('sudo', '#!/bin/bash\nshift 3\n"$@"\n')
         self.executable('registrar', '#!/bin/bash\nprintf "registry:%s\\n" "$*" >> "$CALLS"\n')
         substitutions = {
@@ -99,6 +99,10 @@ if [[ $1 == --enable-input-source ]]; then printf 'enable-scope:%s\n' "${REGISTR
 if [[ $1 == --quit && ${CANCEL:-0} == 1 ]]; then exit 1; fi
 if [[ $1 == --register-input-source && $0 == "$SYSTEM_TARGET/"* && ${FAIL_REGISTER:-0} == 1 ]]; then exit 1; fi
 if [[ $1 == --register-input-source && $0 == "$SYSTEM_TARGET/"* && ${REJECT_USER_COPY:-0} == 1 && -d "$USER_TARGET" ]]; then exit 1; fi
+if [[ $1 == --exchange-installed-bundle ]]; then
+  mv "$2" "$3.test-swap" && mv "$3" "$2" && mv "$3.test-swap" "$3"
+  exit $?
+fi
 exit 0
 ''')
         executable.chmod(0o755)
