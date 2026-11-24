@@ -28,7 +28,7 @@
     "RimeIce-LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "LunaPinyin-LICENSE": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768",
     "LunaPinyin-AUTHORS": "dbf21183999dcd06d4b0f0fe08f7396fcb47cc6f734fd97c3dd851777f1b28f8",
-    "luna_pinyin.schema.yaml": "15ab08687168cd851218d2b0f0c2b60d41031580ab53f1c601679bf051732166",
+    "luna_pinyin.schema.yaml": "262d70d9466d59cb5b252b3aece53a939b39f21cf02f924a09ec54d9fece4a6a",
     "squirrel_public_pinyin.dict.yaml": "16a0b86b5190d4b8bc4661f54123ad83c2fabf00f60e6b49b57f1081d5a749d7",
     "dictionaries/tencent.dict.yaml": "352239dc875343cd49a04d7e79a9b73c5c95ad54e7fe1f8608b30c855a942904"
   },
@@ -42,7 +42,7 @@
   "local_or_personal_data_used": false,
   "integration_changes": [
     "Compose the five unmodified public tables under an isolated squirrel_public_pinyin namespace.",
-    "Reuse the luna_pinyin schema and user_dict identity; change only its bundled default dictionary and Simplified-to-Traditional filters.",
+    "Keep luna_pinyin as the learning dictionary, and apply Simplified-to-Traditional conversion after local typo suggestions.",
     "Disable legacy preset essay frequency mixing for the new public dictionary; preserve the upstream weights."
   ],
   "bundled_shared_support": {

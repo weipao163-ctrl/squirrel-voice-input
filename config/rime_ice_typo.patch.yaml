@@ -1,0 +1,9 @@
+patch:
+  # Standard rime_ice order: after the English and emoji filters, before traditionalize.
+  "engine/filters/@before 8": "lua_filter@*pinyin_typo_filter"
+  typo_reference:
+    dictionary: rime_ice
+    enable_user_dict: false
+    enable_word_completion: false
+    enable_completion: false
+    max_sentences: 0

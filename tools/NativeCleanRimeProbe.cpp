@@ -26,6 +26,20 @@ int main(int argc,char** argv) {
     traits.app_name="rime.enhanced_clean_probe";traits.distribution_code_name="clean-package-probe";
     api->setup(&traits);api->initialize(nullptr);
     need(api->start_maintenance(true),"fresh maintenance did not start");api->join_maintenance_thread();
+    need(api->deploy_config_file("squirrel.yaml", "config_version"), "candidate theme deployment failed");
+    RimeConfig theme{}; need(api->config_open("squirrel", &theme), "deployed theme unavailable");
+    const std::map<std::string, std::string> palette = {
+      {"back_color","0xFFFFFF"}, {"border_color","0xD8D8D8"}, {"candidate_text_color","0xFF8800"},
+      {"label_color","0xFFCC66"}, {"hilited_candidate_text_color","0x0000FF"},
+      {"hilited_candidate_label_color","0x0000FF"}, {"hilited_candidate_back_color","0xFFFFFF"},
+      {"text_color","0x0000FF"}, {"hilited_text_color","0x0000FF"}
+    };
+    for (const auto& [key, expected] : palette) {
+      std::string path = "preset_color_schemes/codex_space_select/" + key;
+      const char* value = api->config_get_cstring(&theme, path.c_str());
+      need(value && expected == value, "candidate theme lost its native color encoding");
+    }
+    api->config_close(&theme);
     sid=api->create_session();need(sid,"fresh session failed");
     RimeSchemaList schemas{};need(api->get_schema_list(&schemas),"bundled enabled schemas unavailable");
     bool luna=false;auto count=schemas.size;std::vector<std::string> ids;
@@ -78,6 +92,29 @@ int main(int argc,char** argv) {
       std::string text=commit.text ? commit.text : "";api->free_commit(&commit);
       need(text==item.second,"fresh simplified default output mismatch");output+=text;
     }
+    // Exercise the packaged filter through the same selection keys used by the frontend.
+    const std::string selectionKeys = "asdfghjkl";
+    for (const auto& item : std::vector<std::pair<std::string, std::string>>{
+           {"jincghang", "经常"}, {"jingchhang", "经常"}, {"rengongnengzhi", "人工智能"}}) {
+      for (char key : item.first) need(api->process_key(sid, key, 0), "typo fixture key rejected");
+      need(api->process_key(sid, ' ', 0), "typo fixture selection unavailable");
+      RimeContext menu{}; RIME_STRUCT_INIT(RimeContext, menu);
+      need(api->get_context(sid, &menu), "typo fixture menu unavailable");
+      int index = -1;
+      for (int i = 0; i < menu.menu.num_candidates && i < 3; ++i) {
+        const auto& candidate = menu.menu.candidates[i];
+        if (candidate.text && item.second == candidate.text && candidate.comment &&
+            std::string(candidate.comment).find("纠错") != std::string::npos) index = i;
+      }
+      api->free_context(&menu);
+      if (index < 1) throw std::runtime_error("Missing annotated public correction for " + item.first);
+      need(api->process_key(sid, selectionKeys[index], 0), "typo selection failed");
+      RimeCommit correction{}; RIME_STRUCT_INIT(RimeCommit, correction);
+      need(api->get_commit(sid, &correction), "typo did not commit");
+      std::string selected = correction.text ? correction.text : "";
+      api->free_commit(&correction);
+      need(selected == item.second, "typo committed wrong text");
+    }
     RimeConfig config{};need(api->schema_open("luna_pinyin", &config), "fresh default schema unavailable");
     const char* first=api->config_get_cstring(&config,"engine/processors/@0");
     need(first && std::string(first)=="lua_processor@*letter_selection","default letter processor missing");
@@ -106,7 +143,7 @@ int main(int argc,char** argv) {
     std::string literal=mixed.text ? mixed.text : "";api->free_commit(&mixed);
     need(literal=="lovewin2k","mixed digits chose a Chinese candidate");
     api->destroy_session(sid);sid=0;api->finalize();api=nullptr;
-    std::cout<<"{\"status\":\"PASS\",\"enabled_schemas\":"<<count<<",\"all_enabled_schema_sources_and_selection_verified\":true,\"all_enabled_schemas_have_real_candidates\":true,\"quick5_real_candidates\":true,\"default_letter_selection_verified\":true,\"default_letter_selection_no_manual_deployment\":true,\"saved_opt_out_restores_normal_space\":true,\"mixed_digit_literal_verified\":true,\"empty_user_directory\":true,\"bundled_default_schema\":\"luna_pinyin\",\"simplified_fixture_output\":\""<<output<<"\",\"microphone_used\":false,\"cloud_calls\":0,\"input_source_registered\":false}\n";
+    std::cout<<"{\"status\":\"PASS\",\"public_typo_commits\":3,\"enabled_schemas\":"<<count<<",\"all_enabled_schema_sources_and_selection_verified\":true,\"all_enabled_schemas_have_real_candidates\":true,\"quick5_real_candidates\":true,\"default_letter_selection_verified\":true,\"default_letter_selection_no_manual_deployment\":true,\"saved_opt_out_restores_normal_space\":true,\"mixed_digit_literal_verified\":true,\"empty_user_directory\":true,\"bundled_default_schema\":\"luna_pinyin\",\"simplified_fixture_output\":\""<<output<<"\",\"microphone_used\":false,\"cloud_calls\":0,\"input_source_registered\":false}\n";
     return 0;
   } catch(const std::exception& error) {
     if(api) { if(sid) api->destroy_session(sid);api->finalize(); }

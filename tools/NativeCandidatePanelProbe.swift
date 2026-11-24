@@ -28,6 +28,43 @@ final class SquirrelInputController {
     func check(_ name:String,_ pass:Bool) { checks.append(["name":name,"passed":pass]) }
     try files.createDirectory(at:root.appendingPathComponent("build"),withIntermediateDirectories:true)
     let fixture = root.appendingPathComponent("build/squirrel.yaml")
+    if let index = CommandLine.arguments.firstIndex(of: "--render-config") {
+      // Only the supplied public styling is deployed into this temporary data directory.
+      try files.copyItem(at: URL(fileURLWithPath: CommandLine.arguments[index + 1]),
+                         to: root.appendingPathComponent("squirrel.yaml"))
+      api.deployer_initialize(&traits)
+      guard api.deploy_config_file("squirrel.yaml", "config_version") else { fatalError("Theme deployment failed") }
+      let config = SquirrelConfig()
+      guard config.openBaseConfig() else { fatalError("Deployed appearance unavailable") }
+      defer { config.close() }
+      let output = URL(fileURLWithPath: CommandLine.arguments[index + 2], isDirectory: true)
+      try files.createDirectory(at: output, withIntermediateDirectories: true)
+      for (name, mode) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
+        app.appearance = NSAppearance(named: mode)
+        for (state, row, count) in [("composing", 0, 0), ("first", 0, 9), ("moved", 2, 9), ("last-page", 1, 3)] {
+          let panel = SquirrelPanel(position: NSRect(x: 300, y: 300, width: 1, height: 20))
+          panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
+          panel.load(config: config, forDarkMode: false)
+          panel.load(config: config, forDarkMode: true)
+          let words = Array(["经常", "京城", "景象", "日常", "时常", "经过", "场景", "普通", "平常"].prefix(count))
+          var comments = Array(repeating: "", count: count)
+          if count > 1 { comments[1] = "纠错 · jing cheng" }
+          panel.update(preedit: "jing chang", selRange: NSRange(location: 0, length: 4), caretPos: 4,
+                       candidates: words, comments: comments, labels: Array("asdfghjkl".prefix(count)).map(String.init),
+                       highlighted: row, page: state == "last-page" ? 1 : 0, lastPage: count != 9, update: true)
+          guard let view = panel.contentView else { fatalError("Missing panel") }
+          view.layoutSubtreeIfNeeded()
+          panel.displayIfNeeded()
+          guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { fatalError("No bitmap") }
+          view.cacheDisplay(in: view.bounds, to: bitmap)
+          guard let png = bitmap.representation(using: .png, properties: [:]) else { fatalError("Cannot encode PNG") }
+          try png.write(to: output.appendingPathComponent("\(name)-\(state).png"))
+          panel.hide()
+        }
+      }
+      print("Rendered eight candidate panel states")
+      return
+    }
     func writeConfig(_ format:String,showPaging:Bool,vertical:Bool = false,memorize:Bool = true) throws {
       try "style:\n  candidate_format: '\(format)'\n  show_paging: \(showPaging)\n  text_orientation: \(vertical ? "vertical" : "horizontal")\n  memorize_size: \(memorize)\n  font_point: 16\n  hilited_corner_radius: 0\n  corner_radius: 2\n  color_scheme: native\n".write(to:fixture,atomically:true,encoding:.utf8)
     }

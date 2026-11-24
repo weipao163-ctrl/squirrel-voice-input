@@ -12,7 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--baseline', action='store_true')
+    parser.add_argument('--render-config', type=Path, help='Render eight fixed states from a squirrel.yaml in an isolated profile')
+    parser.add_argument('--output', type=Path, help='Directory for rendered PNG files')
     args = parser.parse_args()
+    if bool(args.render_config) != bool(args.output) or (args.render_config and args.baseline):
+        parser.error('--render-config requires --output and cannot be used with --baseline')
     project = ROOT/'enhanced-squirrel'
     (project/'build').mkdir(exist_ok=True)
     (ROOT/'evidence').mkdir(exist_ok=True)
@@ -36,6 +40,10 @@ def main():
     (ROOT/f'evidence/{name}.compile.txt').write_text(compilation.stdout+compilation.stderr)
     if compilation.returncode:
         print(compilation.stderr[-5000:]); return compilation.returncode
+    if args.render_config:
+        return subprocess.run([str(work/'NativeCandidatePanelProbe'), str(work/'render'),
+                               '--render-config', str(args.render_config.resolve()), str(args.output.resolve())],
+                              timeout=30).returncode
     runs = []
     # Each crash/repro is isolated: an empty format trap cannot mask stale hit regions.
     for scenario in (['--empty-only','--skip-empty'] if args.baseline else ['']):

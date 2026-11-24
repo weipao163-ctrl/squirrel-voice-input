@@ -156,7 +156,7 @@ public struct VoiceSettings: Codable, Equatable {
   public var queueSeconds = 10
   public var showPreview = true
   public var previewTransparency = 0.1
-  public var previewAtCaret = false
+  public var previewAtCaret = true
   public init() {}
   private enum CodingKeys:String,CodingKey {
     case model, nativePolish, doubao, enabled, binding, mouseHoldEnabled, mouseHoldSeconds, region, workspace, credentialReference, deviceUID

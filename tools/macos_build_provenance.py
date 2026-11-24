@@ -22,7 +22,7 @@ def input_hashes():
                *sorted(p for p in (PROJECT/'resources/Quick5').glob('*') if p.is_file()),
                *sorted(p for p in (PROJECT/'resources/PublicPinyin').rglob('*') if p.is_file()),
                *sorted(p for p in (PROJECT/'resources/DefaultLetterSelection').glob('*') if p.is_file()),
-               ROOT/'tools/bundle_default_letters.py', ROOT/'tools/bundle_public_pinyin.py', ROOT/'tools/prebuild_public_pinyin.py', ROOT/'tools/NativeCleanRimeProbe.cpp',
+               ROOT/'lua/pinyin_typo_filter.lua', ROOT/'tools/bundle_default_letters.py', ROOT/'tools/bundle_public_pinyin.py', ROOT/'tools/prebuild_public_pinyin.py', ROOT/'tools/NativeCleanRimeProbe.cpp',
                Path(__file__).resolve(), ROOT/'tools/record_macos_build.py']
     return {str(p.relative_to(ROOT)):digest(p) for p in sources}
 

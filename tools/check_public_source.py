@@ -13,7 +13,7 @@ FORBIDDEN_PARTS = {
     '.venv', 'venv', '__pycache__', '.build', 'build', 'dist', 'evidence',
     'download', 'Frameworks', 'xcuserdata', 'install-backups', 'cn_dicts',
     'en_dicts', 'upstream', 'tmp', 'test-work', 'vendor', 'data', 'packages',
-    'repos', 'lib', 'bin',
+    'repos', 'lib', 'bin', 'sync',
 }
 FORBIDDEN_SUFFIXES = {
     '.pkg', '.dmg', '.zip', '.dylib', '.so', '.dll', '.exe', '.o', '.a',

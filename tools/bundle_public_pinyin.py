@@ -7,6 +7,7 @@ import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
 RESOURCE = Path('enhanced-squirrel/resources/PublicPinyin')
+TYPO_FILTER = Path('lua/pinyin_typo_filter.lua')
 
 
 def verify_sources(root=ROOT, read=None):
@@ -39,6 +40,8 @@ def verify_bundle(app, root=ROOT, require_prebuilt=False):
             path = contents / folder / destination
             assert path.is_file() and not path.is_symlink(), 'Missing public resource: ' + destination
             assert hashlib.sha256(path.read_bytes()).hexdigest() == manifest['files_sha256'][source]
+    script = contents / 'SharedSupport' / TYPO_FILTER
+    assert script.is_file() and not script.is_symlink() and script.read_bytes() == (root / TYPO_FILTER).read_bytes()
     tables = contents / 'SharedSupport/squirrel_public_pinyin'
     assert {p.name for p in tables.iterdir()} == {'8105.dict.yaml', 'base.dict.yaml', 'ext.dict.yaml', 'tencent.dict.yaml', 'others.dict.yaml'}, 'Unexpected dictionary in public namespace'
     provenance = contents / 'Resources/Licenses/PublicPinyin-UPSTREAM.json'
@@ -64,6 +67,10 @@ def bundle(app, root=ROOT):
             path.parent.mkdir(parents=True, exist_ok=True)
             assert not path.is_symlink()
             shutil.copyfile(root / RESOURCE / source, path)
+    script = app / 'Contents/SharedSupport' / TYPO_FILTER
+    script.parent.mkdir(parents=True, exist_ok=True)
+    assert not script.is_symlink()
+    shutil.copyfile(root / TYPO_FILTER, script)
     shutil.copyfile(root / RESOURCE / 'UPSTREAM.json', app / 'Contents/Resources/Licenses/PublicPinyin-UPSTREAM.json')
     verify_bundle(app, root)
 

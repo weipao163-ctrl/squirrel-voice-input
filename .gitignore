@@ -49,6 +49,7 @@ settings.*.json
 *.local.json
 *.local.yaml
 # User dictionaries, learning databases and audio
+/sync/
 *.userdb/
 *.userdb.*
 *.userdb.txt

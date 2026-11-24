@@ -4,7 +4,7 @@
 schema:
   schema_id: luna_pinyin
   name: 朙月拼音
-  version: '0.31.enhanced-public-20261014'
+  version: '0.31.enhanced-public-20261124'
   author:
     - 佛振 <chen.sst@gmail.com>
   description: |
@@ -61,6 +61,7 @@ engine:
     - reverse_lookup_translator
     - script_translator
   filters:
+    - lua_filter@*pinyin_typo_filter
     - simplifier@zh_hant
     - simplifier@zh_hans
     - simplifier@zh_hant_hk
@@ -80,9 +81,17 @@ translator:
   dictionary: squirrel_public_pinyin
   user_dict: luna_pinyin
   preedit_format:
-    - xform/([nl])v/$1ü/
-    - xform/([nl])ue/$1üe/
     - xform/([jqxy])v/$1u/
+    - xform/([nl])v/$1v/
+    - xform/([nl])ue/$1ve/
+    - xform/(?<=[A-Z])\s(?=[A-Z])//
+
+typo_reference:
+  dictionary: squirrel_public_pinyin
+  enable_user_dict: false
+  enable_word_completion: false
+  enable_completion: false
+  max_sentences: 0
 
 custom_phrase:
   dictionary: ""
@@ -145,5 +154,7 @@ zh_hant_tw:
 __patch:
   # 使用八股文語言模型
   - grammar:/hant?
+  # Accept keyboard ue for üe as a full syllable when displaying the preedit.
+  - { speller/algebra/+: ["derive/^([nl])ve$/$1ue/"] }
   # 用家自選配置
   - luna_pinyin.custom:/patch?
